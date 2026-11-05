@@ -1,0 +1,1777 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="scroll-smooth scroll-snap-enabled">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title id="site-title-tag">Synk.paper 居家共居電子紙狀態同步板 </title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Noto Sans TC & Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'Noto Sans TC', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            paper: {
+              50: '#FBFBF9',
+              100: '#F5F4F0',
+              200: '#EAE8E0',
+              300: '#DCD9CE',
+              800: '#2A2926',
+              900: '#191816',
+            },
+            eink: {
+              dark: '#141413',
+              gray: '#605F5B',
+              border: '#33322E',
+              red: '#D93829', // 經典三色電子紙的紅
+              cream: '#F4F2EB',
+              amber: '#D97706'
+            }
+          },
+          boxShadow: {
+            'eink': '0 20px 40px -15px rgba(20, 20, 19, 0.08), 0 0 0 1px rgba(20, 20, 19, 0.08)',
+            'frame': '0 30px 60px -12px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0,0,0,0.06), inset 0 2px 4px rgba(255,255,255,0.7)',
+            'hardware': '0 40px 80px -20px rgba(35,32,27,0.3), 0 0 0 1px rgba(35,32,27,0.12)',
+            'drawer': '-10px 0 35px -5px rgba(0, 0, 0, 0.25)'
+          }
+        }
+      }
+    }
+  </script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="selection:bg-eink-red selection:text-white antialiased overflow-x-hidden pt-16">
+
+  <!-- ======================================================== -->
+  <!-- 特製電子墨水與紙質動態游標 (Custom E-ink Cursor) -->
+  <!-- ======================================================== -->
+  <div id="custom-cursor-wrapper" class="opacity-0">
+    <!-- 外圈流體游標 (Follower Halo) -->
+    <div id="cursor-follower">
+      <span id="cursor-badge" class="opacity-0 scale-75 text-[9px] font-mono font-bold tracking-tighter text-white bg-eink-red px-1.5 py-0.5 rounded shadow-sm transition-all duration-150 pointer-events-none">EPD</span>
+    </div>
+    <!-- 核心即時墨點 (Ink Dot) -->
+    <div id="cursor-dot"></div>
+    <!-- 點擊擴散墨水波紋容器 -->
+    <div id="cursor-ripples"></div>
+  </div>
+
+
+  <!-- ======================================================== -->
+  <!-- 0. 後台即時控制抽屜 (Admin Control Center Drawer) -->
+  <!-- ======================================================== -->
+  <!-- 背景遮罩 -->
+  <div id="admin-backdrop" onclick="closeAdminDrawer()" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 opacity-0 pointer-events-none transition-opacity duration-300"></div>
+
+  <!-- 後台主抽屜 -->
+  <aside id="admin-drawer" class="fixed top-0 right-0 h-full w-full sm:w-[580px] lg:w-[640px] bg-paper-50 shadow-drawer z-50 translate-x-full transition-transform duration-300 flex flex-col border-l border-stone-300">
+    
+    <!-- 頂部標頭 -->
+    <div class="px-6 py-4 bg-stone-900 text-stone-100 flex items-center justify-between border-b border-stone-800">
+      <div class="flex items-center gap-2.5">
+        <span class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></span>
+        <div>
+          <h2 class="font-bold text-base tracking-tight flex items-center gap-2">
+            <span>Synk 控制後台</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-stone-800 text-stone-300 border border-stone-700">CMS & IoT Console</span>
+          </h2>
+          <p class="text-[11px] text-stone-500">自由調整電子紙看板即時狀態與官網展示內容</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="syncAndFlash()" class="text-xs px-3 py-1.5 rounded-lg bg-eink-red hover:bg-rose-700 text-white font-medium flex items-center gap-1.5 shadow-sm transition">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          <span>同步並刷新</span>
+        </button>
+        <button type="button" onclick="closeAdminDrawer()" class="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition" title="關閉後台 (Esc)">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 後台分頁導航 -->
+    <div class="flex border-b border-stone-300 bg-paper-100 px-4 text-xs font-medium font-mono text-stone-600 overflow-x-auto no-scrollbar">
+      <button type="button" onclick="switchAdminTab('board')" id="tab-btn-board" class="admin-tab-btn py-3 px-4 border-b-2 border-stone-900 text-stone-900 font-bold flex items-center gap-1.5 whitespace-nowrap">
+        <i data-lucide="monitor" class="w-3.5 h-3.5"></i> 看板即時狀態
+      </button>
+      <button type="button" onclick="switchAdminTab('cms')" id="tab-btn-cms" class="admin-tab-btn py-3 px-4 border-b-2 border-transparent hover:text-stone-900 flex items-center gap-1.5 whitespace-nowrap">
+        <i data-lucide="file-edit" class="w-3.5 h-3.5"></i> 官網文案與團隊
+      </button>
+      <button type="button" onclick="switchAdminTab('poll')" id="tab-btn-poll" class="admin-tab-btn py-3 px-4 border-b-2 border-transparent hover:text-stone-900 flex items-center gap-1.5 whitespace-nowrap">
+        <i data-lucide="vote" class="w-3.5 h-3.5"></i> 痛點小投票
+      </button>
+      <button type="button" onclick="switchAdminTab('leads')" id="tab-btn-leads" class="admin-tab-btn py-3 px-4 border-b-2 border-transparent hover:text-stone-900 flex items-center gap-1.5 whitespace-nowrap">
+        <i data-lucide="database" class="w-3.5 h-3.5"></i> 早鳥名單與備份
+      </button>
+    </div>
+
+    <!-- 分頁內容區域 (可滾動) -->
+    <div class="flex-1 overflow-y-auto p-6 space-y-6 text-sm text-stone-800">
+
+      <!-- ================= TAB 1: 看板即時狀態 (IoT 同步控制) ================= -->
+      <div id="admin-tab-board" class="space-y-6">
+        
+        <!-- 房間狀態與社交電量 -->
+        <div class="p-4 rounded-2xl bg-white border border-stone-300 shadow-sm space-y-4">
+          <div class="flex items-center justify-between pb-2 border-b border-stone-200">
+            <span class="font-bold text-stone-900 flex items-center gap-1.5">
+              <i data-lucide="user" class="w-4 h-4 text-stone-700"></i> 房號與個人動態 (Room Status)
+            </span>
+            <span class="text-[11px] font-mono text-stone-400">Door Node A</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label for="cfg-room-user" class="block text-xs font-mono text-stone-500 mb-1">房客與房號</label>
+              <input type="text" id="cfg-room-user" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+            </div>
+            <div>
+              <label for="cfg-room-badge-type" class="block text-xs font-mono text-stone-500 mb-1">狀態徽章樣式</label>
+              <select id="cfg-room-badge-type" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900">
+                <option value="dnd">勿擾 DND (紅底黑白三色紅)</option>
+                <option value="dark">專注 FOCUS (炭黑底)</option>
+                <option value="chill">獨處充電 (低電量灰)</option>
+                <option value="welcome">歡迎交流 (線框純白)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label for="cfg-room-badge-text" class="block text-xs font-mono text-stone-500 mb-1">徽章顯示文字</label>
+            <input type="text" id="cfg-room-badge-text" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+          </div>
+
+          <div>
+            <label for="cfg-room-desc" class="block text-xs font-mono text-stone-500 mb-1">即時活動與備註說明</label>
+            <input type="text" id="cfg-room-desc" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+          </div>
+
+          <!-- 社交電量滑桿 -->
+          <div class="pt-2 border-t border-stone-100">
+            <div class="flex items-center justify-between mb-1.5">
+              <label for="cfg-bath-status" class="text-xs font-mono text-stone-500">社交電量 (Social Battery)</label>
+              <span id="cfg-battery-val-display" class="font-mono font-bold text-xs text-eink-red">20% 🪫 (想安靜)</span>
+            </div>
+            <input type="range" id="cfg-room-battery" min="0" max="100" step="5" class="w-full cursor-pointer" oninput="updateBatterySliderDisplay(this.value)" />
+            <div class="flex justify-between text-[10px] font-mono text-stone-400 mt-1">
+              <span>0% 崩潰空電</span>
+              <span>50% 普通放空</span>
+              <span>100% 社交充飽</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 衛浴與洗衣機即時隊列 -->
+        <div class="p-4 rounded-2xl bg-white border border-stone-300 shadow-sm space-y-4">
+          <div class="flex items-center justify-between pb-2 border-b border-stone-200">
+            <span class="font-bold text-stone-900 flex items-center gap-1.5">
+              <i data-lucide="bath" class="w-4 h-4 text-stone-700"></i> 衛浴與家電佇列 (Bath & Laundry)
+            </span>
+            <span class="text-[11px] font-mono text-stone-400">Queue Manager</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label for="cfg-bath-status" class="block text-xs font-mono text-stone-500 mb-1">主衛浴狀態</label>
+              <select id="cfg-bath-status" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900">
+                <option value="洗澡中">洗澡中 (使用中)</option>
+                <option value="空閒中">空閒中 (無人佔用)</option>
+                <option value="清潔中">打掃清潔中</option>
+              </select>
+            </div>
+            <div>
+              <label for="cfg-bath-minutes" class="block text-xs font-mono text-stone-500 mb-1">預估剩餘分鐘</label>
+              <input type="number" id="cfg-bath-minutes" min="0" max="60" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label for="cfg-bath-next" class="block text-xs font-mono text-stone-500 mb-1">下一位排隊室友</label>
+              <input type="text" id="cfg-bath-next" placeholder="無人排隊 或 室友姓名" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+            </div>
+            <div>
+              <label for="cfg-laundry-text" class="block text-xs font-mono text-stone-500 mb-1">洗衣機即時狀態</label>
+              <input type="text" id="cfg-laundry-text" placeholder="例：已脫水完成 (請取衣)" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 公用耗材與家務清單 (動態增刪) -->
+        <div class="p-4 rounded-2xl bg-white border border-stone-300 shadow-sm space-y-4">
+          <div class="flex items-center justify-between pb-2 border-b border-stone-200">
+            <span class="font-bold text-stone-900 flex items-center gap-1.5">
+              <i data-lucide="shopping-cart" class="w-4 h-4 text-stone-700"></i> 公用耗材採買清單 (Supplies Alert)
+            </span>
+            <button type="button" onclick="addSupplyItem()" class="text-xs px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-md font-mono flex items-center gap-1">
+              <i data-lucide="plus" class="w-3 h-3"></i> 新增項目
+            </button>
+          </div>
+
+          <div id="cfg-supplies-list-container" class="space-y-2">
+            <!-- 動態渲染清單 -->
+          </div>
+
+          <div class="pt-3 border-t border-stone-100 space-y-3">
+            <div class="font-bold text-stone-900 text-xs">今日家務輪值</div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label for="cfg-chore-text" class="block text-xs font-mono text-stone-500 mb-1">負責人與任務</label>
+                <input type="text" id="cfg-chore-text" placeholder="例如：倒垃圾、洗碗、客廳清潔" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+              </div>
+              <div>
+                <label for="cfg-chore-time" class="block text-xs font-mono text-stone-500 mb-1">抵達時間</label>
+                <input type="text" id="cfg-chore-time" placeholder="晚上 20:45" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 看板即時跑馬便條留言 -->
+        <div class="p-4 rounded-2xl bg-white border border-stone-300 shadow-sm space-y-3">
+          <div class="flex items-center justify-between pb-2 border-b border-stone-200">
+            <span class="font-bold text-stone-900 flex items-center gap-1.5">
+              <i data-lucide="message-square" class="w-4 h-4 text-stone-700"></i> 看板跑馬燈廣播便條
+            </span>
+            <span class="text-[11px] font-mono text-stone-400">Broadcast Note</span>
+          </div>
+          <div>
+            <input type="text" id="cfg-broadcast-note" placeholder="例如：晚上 7:00 想叫必勝客，想搭伙的 6:30 前加單" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+          </div>
+        </div>
+
+      </div>
+
+
+      <!-- ================= TAB 2: 官網文案與團隊 CMS ================= -->
+      <div id="admin-tab-cms" class="hidden space-y-6">
+        
+        <!-- Hero 主標與副標 -->
+        <div class="p-4 rounded-2xl bg-white border border-stone-300 shadow-sm space-y-3">
+          <div class="font-bold text-stone-900 flex items-center gap-1.5 pb-2 border-b border-stone-200">
+            <i data-lucide="sparkles" class="w-4 h-4 text-stone-700"></i> Hero 首頁大標題與副標
+          </div>
+          <div>
+            <label for="cms-hero-title" class="block text-xs font-mono text-stone-500 mb-1">主標題 (可用 \n 換行)</label>
+            <input type="text" id="cms-hero-title" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+          </div>
+          <div>
+            <label for="cms-hero-subtitle" class="block text-xs font-mono text-stone-500 mb-1">副標題介紹文案</label>
+            <textarea id="cms-hero-subtitle" rows="3" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900"></textarea>
+          </div>
+        </div>
+
+        <!-- 畢業展覽資訊 -->
+        <div class="p-4 rounded-2xl bg-white border border-stone-300 shadow-sm space-y-3">
+          <div class="font-bold text-stone-900 flex items-center gap-1.5 pb-2 border-b border-stone-200">
+            <i data-lucide="map-pin" class="w-4 h-4 text-stone-700"></i> 畢業展覽與攤位資訊 (Footer)
+          </div>
+          <div>
+            <label for="cms-header-tag" class="block text-xs font-mono text-stone-500 mb-1">頂部導覽列標籤 (Logo 旁灰色文字)</label>
+            <input type="text" id="cms-header-tag" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" placeholder="例如：2026 畢業設計展" />
+          </div>
+          <div>
+            <label for="cms-expo-venue" class="block text-xs font-mono text-stone-500 mb-1">展覽活動名稱與地點</label>
+            <input type="text" id="cms-expo-venue" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label for="cms-advisor-name" class="block text-xs font-mono text-stone-500 mb-1">指導教授資訊</label>
+              <input type="text" id="cms-advisor-name" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+            </div>
+            <div>
+              <label for="cms-project-code" class="block text-xs font-mono text-stone-500 mb-1">專案編號代碼</label>
+              <input type="text" id="cms-project-code" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 專題團隊組員名單 (可動態增刪) -->
+        <div class="p-4 rounded-2xl bg-white border border-stone-300 shadow-sm space-y-4">
+          <div class="flex items-center justify-between pb-2 border-b border-stone-200">
+            <span class="font-bold text-stone-900 flex items-center gap-1.5">
+              <i data-lucide="users" class="w-4 h-4 text-stone-700"></i> 畢業專題團隊成員
+            </span>
+            <button type="button" onclick="addTeamMember()" class="text-xs px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-md font-mono flex items-center gap-1">
+              <i data-lucide="plus" class="w-3 h-3"></i> 新增成員
+            </button>
+          </div>
+          <div id="cms-team-list-container" class="space-y-3">
+            <!-- 動態渲染組員 -->
+          </div>
+        </div>
+
+        <!-- 簡報導覽 Slide 文案快速自訂 -->
+        <div class="p-4 rounded-2xl bg-white border border-stone-300 shadow-sm space-y-3">
+          <div class="font-bold text-stone-900 flex items-center gap-1.5 pb-2 border-b border-stone-200">
+            <i data-lucide="presentation" class="w-4 h-4 text-stone-700"></i> Slide 簡報頁標題與焦點
+          </div>
+          <div class="space-y-3 text-xs">
+            <div>
+              <label for="cms-slide-0-title" class="font-mono text-stone-500 block mb-1">Slide 01 (為什麼是電子紙)</label>
+              <input type="text" id="cms-slide-0-title" class="w-full px-3 py-2 bg-paper-50 border border-stone-300 rounded-lg mb-1" />
+            </div>
+            <div>
+              <label for="cms-slide-1-title" class="font-mono text-stone-500 block mb-1">Slide 02 (隱私與社交電量)</label>
+              <input type="text" id="cms-slide-1-title" class="w-full px-3 py-2 bg-paper-50 border border-stone-300 rounded-lg mb-1" />
+            </div>
+            <div>
+              <label for="cms-slide-2-title" class="font-mono text-stone-500 block mb-1">Slide 03 (家務排班與公用物資)</label>
+              <input type="text" id="cms-slide-2-title" class="w-full px-3 py-2 bg-paper-50 border border-stone-300 rounded-lg mb-1" />
+            </div>
+            <div>
+              <label for="cms-slide-3-title" class="font-mono text-stone-500 block mb-1">Slide 04 (軟硬體物聯網架構)</label>
+              <input type="text" id="cms-slide-3-title" class="w-full px-3 py-2 bg-paper-50 border border-stone-300 rounded-lg mb-1" />
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+
+      <!-- ================= TAB 3: 破冰小投票管理 ================= -->
+      <div id="admin-tab-poll" class="hidden space-y-6">
+        <div class="p-4 rounded-2xl bg-white border border-stone-300 shadow-sm space-y-4">
+          <div class="flex items-center justify-between pb-2 border-b border-stone-200">
+            <span class="font-bold text-stone-900 flex items-center gap-1.5">
+              <i data-lucide="vote" class="w-4 h-4 text-stone-700"></i> 開場靈魂拷問題目設定
+            </span>
+            <button type="button" onclick="resetPollVotes()" class="text-xs px-2.5 py-1 text-rose-600 hover:bg-rose-50 rounded font-mono">
+              清空票數重新計票
+            </button>
+          </div>
+
+          <div>
+            <label for="poll-cfg-question" class="block text-xs font-mono text-stone-500 mb-1">投票主標題題目</label>
+            <input type="text" id="poll-cfg-question" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+          </div>
+
+          <div>
+            <label for="poll-cfg-desc" class="block text-xs font-mono text-stone-500 mb-1">副說明文案</label>
+            <input type="text" id="poll-cfg-desc" class="w-full px-3 py-2 text-xs bg-paper-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900" />
+          </div>
+
+          <div class="space-y-3 pt-2">
+            <span class="text-xs font-mono font-bold text-stone-600">4 個痛點選項文字與當前得票：</span>
+            
+            <div class="space-y-2" id="poll-options-editor">
+              <!-- 動態生成 4 個選項輸入框與票數 -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- ================= TAB 4: 早鳥名單與備份 ================= -->
+      <div id="admin-tab-leads" class="hidden space-y-6">
+        
+        <!-- 早鳥名單表格 -->
+        <div class="p-4 rounded-2xl bg-white border border-stone-300 shadow-sm space-y-4">
+          <div class="flex items-center justify-between pb-2 border-b border-stone-200">
+            <div>
+              <span class="font-bold text-stone-900 flex items-center gap-1.5">
+                <i data-lucide="user-check" class="w-4 h-4 text-emerald-600"></i> 早鳥預約訪客名單
+              </span>
+              <span id="leads-count-badge" class="text-xs text-stone-500">共 0 筆登記</span>
+            </div>
+            <div class="flex gap-2">
+              <button type="button" onclick="exportLeadsCSV()" class="text-xs px-2.5 py-1 bg-stone-900 text-white rounded hover:bg-stone-800 flex items-center gap-1">
+                <i data-lucide="download" class="w-3 h-3"></i> 匯出 CSV
+              </button>
+              <button type="button" onclick="clearLeadsPrompt()" class="text-xs px-2 py-1 text-stone-400 hover:text-rose-600">
+                清空
+              </button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto max-h-60 border border-stone-200 rounded-xl">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-stone-100 text-stone-600 font-mono">
+                <tr>
+                  <th class="p-2">姓名</th>
+                  <th class="p-2">Email</th>
+                  <th class="p-2">居住型態</th>
+                  <th class="p-2">登記時間</th>
+                </tr>
+              </thead>
+              <tbody id="leads-table-body" class="divide-y divide-stone-100">
+                <!-- 動態注入名單 -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 系統備份與還原 -->
+        <div class="p-4 rounded-2xl bg-white border border-stone-300 shadow-sm space-y-4">
+          <div class="font-bold text-stone-900 pb-2 border-b border-stone-200 flex items-center gap-1.5">
+            <i data-lucide="hard-drive" class="w-4 h-4 text-stone-700"></i> 系統配置備份與復原
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <button type="button" onclick="exportConfigJSON()" class="p-3 bg-stone-100 hover:bg-stone-200 text-stone-900 rounded-xl font-medium flex items-center justify-center gap-1.5 transition">
+              <i data-lucide="file-json" class="w-4 h-4"></i> 匯出設定檔 (JSON)
+            </button>
+
+            <label for="note-author-input" class="p-3 bg-stone-100 hover:bg-stone-200 text-stone-900 rounded-xl font-medium flex items-center justify-center gap-1.5 cursor-pointer transition">
+              <i data-lucide="upload" class="w-4 h-4"></i> 匯入設定檔 (JSON)
+              <input type="file" id="import-json-file" accept=".json" onchange="importConfigJSON(event)" class="hidden" />
+            </label>
+          </div>
+
+          <div class="pt-2 border-t border-stone-100">
+            <button type="button" onclick="restoreDefaultPrompt()" class="w-full py-2.5 text-xs text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-xl font-medium border border-rose-200 transition">
+              🔄 還原為官方初始畢專狀態 (Reset to Default)
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- 抽屜底部操作列 -->
+    <div class="p-4 bg-paper-100 border-t border-stone-300 flex items-center justify-between">
+      <span class="text-[11px] font-mono text-stone-400">LocalStorage: Auto-Saved</span>
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="closeAdminDrawer()" class="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900 transition">
+          關閉
+        </button>
+        <button type="button" onclick="saveAllFromAdmin(); syncAndFlash();" class="px-5 py-2 text-xs font-bold bg-stone-900 hover:bg-stone-800 text-white rounded-xl shadow-sm transition flex items-center gap-1.5">
+          <i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i>
+          <span>儲存並即時同步</span>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+
+  <!-- ======================================================== -->
+  <!-- 密碼驗證彈窗 (Password Verification Modal - 1314) -->
+  <!-- ======================================================== -->
+  <div id="password-modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm hidden">
+    <div id="password-modal-card" class="relative w-full max-w-sm bg-paper-50 rounded-2xl p-6 shadow-2xl border border-stone-300 transition-all">
+      <div class="flex items-center justify-between mb-4 pb-2 border-b border-stone-200">
+        <div class="flex items-center gap-2">
+          <i data-lucide="shield-check" class="w-4 h-4 text-stone-700"></i>
+          <span class="text-xs font-mono font-bold text-stone-800">系統管理身分驗證</span>
+        </div>
+        <button type="button" onclick="closePasswordModal()" class="text-stone-400 hover:text-stone-700 text-sm">
+          ✕
+        </button>
+      </div>
+
+      <p class="text-xs text-stone-600 mb-4">請輸入管理密碼以存取 Synk 控制後台：</p>
+
+      <form id="password-form" onsubmit="verifyAdminPassword(event)" class="space-y-4">
+        <div>
+          <input type="password" id="admin-pass-input" autocomplete="off" placeholder="請輸入密碼" class="w-full px-3.5 py-2.5 text-center text-sm font-mono tracking-widest bg-white border border-stone-300 rounded-xl focus:outline-none focus:border-stone-900 shadow-sm" />
+          <p id="password-error-msg" class="text-xs text-eink-red font-medium mt-2 hidden flex items-center justify-center gap-1">
+            <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
+            <span>密碼錯誤，請重新輸入</span>
+          </p>
+        </div>
+        <div class="flex gap-2 pt-1">
+          <button type="button" onclick="closePasswordModal()" class="flex-1 py-2.5 text-xs text-stone-600 bg-stone-100 hover:bg-stone-200 rounded-xl font-medium transition">
+            取消
+          </button>
+          <button type="submit" class="flex-1 py-2.5 text-xs text-white bg-stone-900 hover:bg-stone-800 rounded-xl font-medium transition shadow-sm">
+            驗證進入
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- ======================================================== -->
+  <!-- 浮動 Toast 通知組件 -->
+  <!-- ======================================================== -->
+  <div id="toast-notification" class="fixed bottom-6 right-6 z-50 bg-stone-900 text-white text-xs font-medium px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+    <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
+    <span id="toast-message">狀態已同步！</span>
+  </div>
+
+
+  <!-- ======================================================== -->
+  <!-- 1. 開場破冰小投票 (Entry Icebreaker Poll Modal) -->
+  <!-- ======================================================== -->
+  <div id="poll-modal" role="dialog" aria-modal="true" aria-labelledby="poll-modal-title" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm transition-opacity duration-300">
+    <div class="relative w-full max-w-xl bg-paper-50 rounded-2xl p-6 sm:p-8 shadow-2xl border border-stone-300">
+      
+      <!-- 標頭標籤 -->
+      <div class="flex items-center justify-between mb-4 pb-3 border-b border-stone-200">
+        <div class="flex items-center gap-2">
+          <span class="inline-block w-2.5 h-2.5 rounded-full bg-eink-red animate-pulse"></span>
+          <span class="text-xs uppercase tracking-wider font-mono font-semibold text-stone-500">Live Research / 共居生活小測驗</span>
+        </div>
+        <button type="button" id="skip-poll" class="text-xs text-stone-400 hover:text-stone-700 underline transition-colors">
+          直接看產品 ✕
+        </button>
+      </div>
+
+      <!-- 題目視圖 -->
+      <div id="poll-question-view">
+        <h2 id="view-poll-question" class="text-xl sm:text-2xl font-bold text-stone-900 tracking-tight leading-snug mb-2">
+          在合租或共居生活裡，哪一瞬間最讓你感到心累與尷尬？
+        </h2>
+        <p id="view-poll-desc" class="text-sm text-stone-500 mb-6">
+          你的心聲，正是我們本次畢業專題誕生的理由。請點選最戳中你的一項：
+        </p>
+
+        <!-- 選項列表 (兼具靜態容錯與動態渲染) -->
+        <div class="space-y-3" id="poll-options-container">
+          <button type="button" onclick="submitVote(0)" class="w-full text-left p-4 rounded-xl border border-stone-300 bg-white hover:border-stone-900 hover:bg-stone-50 transition-all flex items-center justify-between group">
+            <span class="text-sm sm:text-base font-medium text-stone-800 group-hover:text-black">1. 衣服洗好留在洗衣機兩天沒人收</span>
+            <i data-lucide="arrow-right" class="w-4 h-4 text-stone-400 group-hover:text-black group-hover:translate-x-1 transition-all"></i>
+          </button>
+          <button type="button" onclick="submitVote(1)" class="w-full text-left p-4 rounded-xl border border-stone-300 bg-white hover:border-stone-900 hover:bg-stone-50 transition-all flex items-center justify-between group">
+            <span class="text-sm sm:text-base font-medium text-stone-800 group-hover:text-black">2. 以為衛生紙還有，如廁後才發現只剩紙筒</span>
+            <i data-lucide="arrow-right" class="w-4 h-4 text-stone-400 group-hover:text-black group-hover:translate-x-1 transition-all"></i>
+          </button>
+          <button type="button" onclick="submitVote(2)" class="w-full text-left p-4 rounded-xl border border-stone-300 bg-white hover:border-stone-900 hover:bg-stone-50 transition-all flex items-center justify-between group">
+            <span class="text-sm sm:text-base font-medium text-stone-800 group-hover:text-black">3. 戴著耳機在房間，室友沒敲門突然推開探頭</span>
+            <i data-lucide="arrow-right" class="w-4 h-4 text-stone-400 group-hover:text-black group-hover:translate-x-1 transition-all"></i>
+          </button>
+          <button type="button" onclick="submitVote(3)" class="w-full text-left p-4 rounded-xl border border-stone-300 bg-white hover:border-stone-900 hover:bg-stone-50 transition-all flex items-center justify-between group">
+            <span class="text-sm sm:text-base font-medium text-stone-800 group-hover:text-black">4. 想洗澡但永遠不知道裡面有沒有人、還要等多久</span>
+            <i data-lucide="arrow-right" class="w-4 h-4 text-stone-400 group-hover:text-black group-hover:translate-x-1 transition-all"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- 投票結果呈現 (預設隱藏) -->
+      <div id="poll-result-view" class="hidden">
+        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-100 text-stone-700 text-xs font-medium mb-3">
+          <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-600"></i> 已記錄你的痛點票選
+        </div>
+        <h3 class="text-lg sm:text-xl font-bold text-stone-900 mb-4">
+          你並不孤單！有超過 89% 的同住者為這些瑣碎尷尬抓狂。
+        </h3>
+
+        <!-- 結果長條圖 (動態渲染) -->
+        <div class="space-y-3.5 mb-6 text-xs sm:text-sm" id="poll-bars-container">
+          <!-- 動態長條圖 -->
+        </div>
+
+        <button type="button" id="close-poll-btn" class="w-full py-3.5 px-6 rounded-xl bg-stone-900 hover:bg-stone-800 text-paper-50 font-medium flex items-center justify-center gap-2 transition-all shadow-md group">
+          <span>看看我們如何用一塊電子紙解決</span>
+          <i data-lucide="arrow-right" class="w-4 h-4 group-hover:translate-x-1 transition-transform"></i>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- ======================================================== -->
+  <!-- 導航列 (Navbar - 保持乾淨不顯眼) -->
+  <!-- ======================================================== -->
+  <header class="fixed top-0 left-0 right-0 w-full z-40 bg-paper-100/90 backdrop-blur-md border-b border-stone-200">
+    <div class="max-w-7xl 2xl:max-w-[1440px] mx-auto px-4 sm:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <a href="#" class="flex items-center gap-2 group">
+          <div class="w-7 h-7 rounded-lg bg-stone-900 flex items-center justify-center text-paper-50 font-bold text-xs">
+            S.
+          </div>
+          <span class="font-bold tracking-tight text-lg text-stone-900 group-hover:text-stone-700 transition">Synk<span class="font-light text-stone-500">.paper</span></span>
+        </a>
+        <span id="nav-badge-text" class="hidden sm:inline-block text-[11px] font-mono px-2 py-0.5 rounded bg-stone-200 text-stone-600">2026 畢業設計展</span>
+      </div>
+
+      <!-- 電腦版頂部導航 -->
+      <nav id="desktop-nav" class="hidden md:flex items-center gap-2 lg:gap-3 text-sm font-medium">
+        <a href="#hero" class="nav-link px-2.5 py-1 rounded-md transition font-medium text-stone-600 hover:text-stone-900 border border-transparent">產品亮點</a>
+        <a href="#presentation" class="nav-link px-2.5 py-1 rounded-md transition font-medium text-stone-600 hover:text-stone-900 border border-transparent">功能導覽</a>
+        <a href="#interactive-simulator" class="nav-link px-2.5 py-1 rounded-md transition font-medium text-stone-600 hover:text-stone-900 border border-transparent">線上模擬</a>
+        <a href="#sticky-notes-wall" class="nav-link px-2.5 py-1 rounded-md transition font-medium text-stone-600 hover:text-stone-900 border border-transparent">留言板體驗</a>
+        <a href="#tech-specs" class="nav-link px-2.5 py-1 rounded-md transition font-medium text-stone-600 hover:text-stone-900 border border-transparent">技術規格</a>
+        <a href="#team" class="nav-link px-2.5 py-1 rounded-md transition font-medium text-stone-600 hover:text-stone-900 border border-transparent">專案團隊</a>
+      </nav>
+
+      <div class="flex items-center gap-2 sm:gap-2.5">
+        <!-- 下載 APP 按鈕 -->
+        <button type="button" onclick="openAppDownloadModal()" class="hidden sm:flex text-xs sm:text-sm font-medium px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full border border-stone-300 hover:border-stone-900 bg-white hover:bg-stone-50 text-stone-800 transition items-center gap-1.5 shadow-xs">
+          <i data-lucide="download" class="w-3.5 h-3.5 text-stone-700"></i>
+          <span>下載 APP</span>
+        </button>
+
+        <!-- 早鳥支持按鈕 -->
+        <button type="button" onclick="openPreorderModal()" class="text-xs sm:text-sm font-medium px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full bg-stone-900 hover:bg-stone-800 text-white shadow-sm transition-all flex items-center gap-1.5 active:scale-95">
+          <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-300"></i>
+          <span>早鳥支持</span>
+        </button>
+
+        <!-- 手機版 RWD 漢堡選單按鈕 -->
+        <button type="button" id="mobile-menu-btn" onclick="toggleMobileMenu()" class="md:hidden p-2 rounded-xl text-stone-700 hover:bg-stone-200/80 transition focus:outline-none active:scale-90" aria-label="切換選單">
+          <i data-lucide="menu" id="mobile-menu-icon" class="w-5 h-5"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 核心無障礙主要內容區塊 (Semantic Landmark) -->
+  <main id="main-content" class="w-full">
+
+  <!-- 手機版 RWD 導航選單 (Mobile Navigation Menu) -->
+  <div id="mobile-menu" class="fixed inset-x-0 top-16 z-30 bg-paper-50/98 backdrop-blur-md border-b border-stone-300 shadow-xl transition-all duration-300 -translate-y-full opacity-0 pointer-events-none md:hidden">
+    <div class="px-6 py-6 space-y-4">
+      <nav class="flex flex-col space-y-2.5 font-medium text-stone-700">
+        <a href="#hero" onclick="handleMobileNavClick(0)" class="px-3.5 py-2.5 rounded-xl hover:bg-stone-200/70 transition flex items-center justify-between">
+          <span class="flex items-center gap-2"><i data-lucide="sparkle" class="w-4 h-4 text-stone-500"></i> 01 產品亮點</span>
+          <i data-lucide="chevron-right" class="w-4 h-4 text-stone-400"></i>
+        </a>
+        <a href="#presentation" onclick="handleMobileNavClick(1)" class="px-3.5 py-2.5 rounded-xl hover:bg-stone-200/70 transition flex items-center justify-between">
+          <span class="flex items-center gap-2"><i data-lucide="layers" class="w-4 h-4 text-stone-500"></i> 02 功能導覽</span>
+          <i data-lucide="chevron-right" class="w-4 h-4 text-stone-400"></i>
+        </a>
+        <a href="#interactive-simulator" onclick="handleMobileNavClick(2)" class="px-3.5 py-2.5 rounded-xl hover:bg-stone-200/70 transition flex items-center justify-between">
+          <span class="flex items-center gap-2"><i data-lucide="play" class="w-4 h-4 text-stone-500"></i> 03 線上體驗</span>
+          <i data-lucide="chevron-right" class="w-4 h-4 text-stone-400"></i>
+        </a>
+        <a href="#sticky-notes-wall" onclick="handleMobileNavClick(3)" class="px-3.5 py-2.5 rounded-xl hover:bg-stone-200/70 transition flex items-center justify-between">
+          <span class="flex items-center gap-2"><i data-lucide="sticky-note" class="w-4 h-4 text-eink-red"></i> 04 留言板體驗</span>
+          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-eink-red/10 text-eink-red font-semibold">NEW</span>
+        </a>
+        <a href="#tech-specs" onclick="handleMobileNavClick(4)" class="px-3.5 py-2.5 rounded-xl hover:bg-stone-200/70 transition flex items-center justify-between">
+          <span class="flex items-center gap-2"><i data-lucide="cpu" class="w-4 h-4 text-stone-500"></i> 05 技術規格與團隊</span>
+          <i data-lucide="chevron-right" class="w-4 h-4 text-stone-400"></i>
+        </a>
+      </nav>
+
+      <div class="pt-4 border-t border-stone-200 flex flex-col gap-2.5">
+        <button type="button" onclick="openAppDownloadModal(); closeMobileMenu();" class="w-full py-2.5 rounded-xl border border-stone-300 bg-white text-stone-800 font-medium text-sm flex items-center justify-center gap-2">
+          <i data-lucide="download" class="w-4 h-4"></i>
+          <span>下載專屬 APP (即將上線)</span>
+        </button>
+        <button type="button" onclick="openPreorderModal(); closeMobileMenu();" class="w-full py-2.5 rounded-xl bg-stone-900 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-sm">
+          <i data-lucide="sparkles" class="w-4 h-4 text-amber-300"></i>
+          <span>早鳥體驗登記</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ======================================================== -->
+  <!-- 2. Hero Section：商品視覺與預約/購買連結 -->
+  <!-- ======================================================== -->
+    <!-- ======================================================== -->
+  <!-- 2. Hero Section：商品視覺與預約/購買連結 (左右雙欄精緻排版) -->
+  <!-- ======================================================== -->
+  <section id="hero" class="relative min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 sm:px-8 max-w-7xl 2xl:max-w-[1440px] mx-auto py-8 sm:py-12">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 xl:gap-12 items-center w-full my-auto">
+
+      <!-- 左側文案與行動呼籲 (Left Column - 大氣放大、層次分明) -->
+      <div class="lg:col-span-5 text-left space-y-6 sm:space-y-7 flex flex-col justify-center py-2">
+        
+        <!-- 頂部定位標籤 -->
+        <div>
+          <div class="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full border border-stone-300 bg-white/90 text-xs sm:text-sm font-mono text-stone-700 shadow-xs w-fit">
+            <span class="w-2.5 h-2.5 rounded-full bg-eink-red"></span>
+            <span>智慧居家物聯網 × 低耗電電子墨水創新設計</span>
+          </div>
+        </div>
+
+        <!-- 主標題 (大氣放大、單行不折行、視覺焦點) -->
+        <h1 id="view-hero-title" class="text-2xl sm:text-3xl lg:text-[34px] xl:text-[40px] 2xl:text-[42px] font-extrabold text-stone-900 tracking-tight leading-tight whitespace-nowrap">無聲的默契，剛剛好的距離。</h1>
+        
+        <!-- 副標題 (放大字級，閱讀舒服大氣) -->
+        <p id="view-hero-subtitle" class="text-base sm:text-lg text-stone-600 font-normal leading-relaxed max-w-xl text-balance">
+          專為合租與共居生活打造的低功耗 <span class="font-semibold text-stone-900 underline decoration-stone-300 decoration-2 underline-offset-4">E-ink 狀態同步看板</span>。<br class="hidden sm:inline" />不發光、免牽線、無聲溝通，化解日常所有的尷尬碰撞。
+        </p>
+
+        <!-- 核心標籤 (精巧和諧、自適應排列) -->
+        <div class="flex flex-wrap items-center gap-2 sm:gap-2.5 text-xs sm:text-sm font-medium text-stone-700 pt-1">
+          <span class="px-3.5 py-2 rounded-xl bg-stone-200/80 border border-stone-300/80 flex items-center gap-1.5 shadow-2xs">
+            <i data-lucide="eye-off" class="w-4 h-4 text-stone-600"></i> 不發光・無藍光干擾
+          </span>
+          <span class="px-3.5 py-2 rounded-xl bg-stone-200/80 border border-stone-300/80 flex items-center gap-1.5 shadow-2xs">
+            <i data-lucide="battery-charging" class="w-4 h-4 text-stone-600"></i> 一次充電續航 180 天
+          </span>
+          <span class="px-3.5 py-2 rounded-xl bg-stone-200/80 border border-stone-300/80 flex items-center gap-1.5 shadow-2xs">
+            <i data-lucide="magnet" class="w-4 h-4 text-stone-600"></i> 磁吸式房門與冰箱安裝
+          </span>
+        </div>
+
+        <!-- 行動呼籲 (CTA) 按鈕組 (放大按鈕) -->
+        <div class="space-y-4 pt-2">
+          <div class="flex flex-wrap items-center gap-4">
+            <button type="button" onclick="openPreorderModal()" class="px-7 py-4 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white font-semibold text-base sm:text-lg shadow-lg hover:shadow-xl transition flex items-center justify-center gap-2.5 group active:scale-95 cursor-pointer">
+              <span>早鳥支持登記</span>
+              <i data-lucide="arrow-right" class="w-5 h-5 group-hover:translate-x-1 transition-transform"></i>
+            </button>
+
+            <button type="button" onclick="openAppDownloadModal()" class="px-6 py-4 rounded-2xl bg-white border border-stone-300 hover:border-stone-900 text-stone-800 font-medium text-base sm:text-lg shadow-sm hover:shadow transition flex items-center justify-center gap-2.5 active:scale-95 cursor-pointer">
+              <i data-lucide="download" class="w-5 h-5 text-stone-700"></i>
+              <span>下載專屬 APP</span>
+            </button>
+          </div>
+
+          <div>
+            <a href="#presentation" class="inline-flex items-center gap-1.5 text-sm sm:text-base text-stone-500 hover:text-stone-900 font-medium transition py-1">
+              <span>探索功能簡報</span>
+              <i data-lucide="chevron-down" class="w-4 h-4 text-stone-400"></i>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右側實體電子紙看板 (Right Column - 全面等比放大，震撼大螢幕視覺) -->
+      <div class="lg:col-span-7 relative w-full flex items-center justify-center">
+        <!-- 電子紙實體渲染 Mockup 容器 (寬度放大到 720px~760px) -->
+        <div class="relative w-full max-w-xl lg:max-w-3xl xl:max-w-[780px] 2xl:max-w-[820px] mx-auto">
+          <!-- 柔和陰影底座 -->
+          <div class="absolute -inset-5 bg-gradient-to-b from-stone-300/40 to-transparent rounded-3xl blur-2xl -z-10"></div>
+
+          <!-- 硬體外框 -->
+          <div class="bg-[#2D2A26] p-4 sm:p-5.5 lg:p-6 xl:p-6.5 rounded-[30px] sm:rounded-[36px] shadow-hardware border-[3px] sm:border-[4px] border-[#3F3B36] relative">
+            
+            <!-- 頂部實體按鍵與狀態針孔燈 -->
+            <div class="absolute top-3.5 right-10 sm:right-12 flex items-center gap-2.5">
+              <div class="w-2 h-2 rounded-full bg-stone-600"></div>
+              <div class="w-2 h-2 rounded-full bg-stone-600"></div>
+              <button type="button" onclick="syncAndFlash()" class="w-10 h-2.5 rounded-full bg-stone-700 hover:bg-eink-red transition cursor-pointer" title="按壓實體鍵重繪"></button>
+            </div>
+
+            <!-- 電子紙螢幕本體 (Hero 看板螢幕) -->
+            <div id="hero-eink-screen" class="bg-eink-cream rounded-2xl p-4 sm:p-5.5 lg:p-6 text-stone-900 border border-stone-400/40 relative shadow-inner overflow-hidden font-sans select-none transition-all">
+              
+              <!-- 電子紙表面細微反光質感 -->
+              <div class="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none"></div>
+
+              <!-- 看板頂部資訊列 (字級放大) -->
+              <div class="flex items-center justify-between pb-4 border-b border-stone-400 mb-5 font-mono text-xs sm:text-sm text-stone-700">
+                <div class="flex items-center gap-3">
+                  <span class="font-bold text-sm sm:text-base tracking-tight text-stone-900 flex items-center gap-2">
+                    <i data-lucide="home" class="w-4 h-4 sm:w-5 sm:h-5"></i> ROOM 302・客廳中樞
+                  </span>
+                  <span class="hidden sm:inline-block px-2 py-0.5 border border-stone-400 rounded text-[11px]">Wi-Fi 即時同步</span>
+                </div>
+                <div class="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm">
+                  <span class="hidden xs:inline">23°C / 濕度 58%</span>
+                  <span id="board-live-clock" class="font-bold text-sm sm:text-base">14:48</span>
+                  <div class="flex items-center gap-1.5 border border-stone-500 rounded px-2 py-0.5">
+                    <i data-lucide="battery" class="w-3.5 h-3.5"></i>
+                    <span class="text-[11px]">94%</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 電子紙內容排版格線 (三欄佈局，等比放大卡片) -->
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-3.5">
+                
+                <!-- 卡片 1: 室友動態與隱私 -->
+                <div class="p-4 sm:p-4.5 rounded-xl border-2 border-stone-900 bg-paper-50 space-y-2.5 flex flex-col justify-between min-h-[165px] sm:min-h-[185px]">
+                  <div>
+                    <div class="flex items-center justify-between pb-1">
+                      <span class="text-[10px] sm:text-[11px] font-mono font-bold uppercase tracking-wider text-stone-500 whitespace-nowrap shrink-0">Room Status</span>
+                      <span id="hero-badge-elem" class="px-2 py-0.5 text-xs font-bold bg-eink-red text-white rounded whitespace-nowrap shrink-0">勿擾 DND</span>
+                    </div>
+                    <p id="hero-room-user" class="text-base sm:text-lg lg:text-xl font-bold text-stone-900 leading-snug mt-1.5">房門狀態看板</p>
+                    <p id="hero-room-desc" class="text-xs sm:text-sm text-stone-600 mt-1">專注工作中</p>
+                  </div>
+                  <div class="pt-2 border-t border-dashed border-stone-300 text-xs sm:text-sm text-stone-600">
+                    <div class="flex items-center justify-between gap-1">
+                      <span class="text-stone-500 whitespace-nowrap font-medium">社交電量</span>
+                      <span id="hero-room-battery" class="font-mono font-bold text-stone-900 whitespace-nowrap">80% 🟢</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 卡片 2: 公用衛浴即時隊列 -->
+                <div class="p-4 sm:p-4.5 rounded-xl border border-stone-400 bg-paper-50 space-y-2.5 flex flex-col justify-between min-h-[165px] sm:min-h-[185px]">
+                  <div>
+                    <div class="flex items-center justify-between pb-1">
+                      <span class="text-[10px] sm:text-[11px] font-mono font-bold uppercase tracking-wider text-stone-500 whitespace-nowrap shrink-0">Bath & Laundry</span>
+                      <span id="hero-bath-badge" class="px-2 py-0.5 text-xs font-semibold border border-stone-900 text-stone-900 rounded whitespace-nowrap shrink-0">空閒</span>
+                    </div>
+                    <p id="hero-bath-title" class="text-base sm:text-lg lg:text-xl font-bold text-stone-900 leading-snug mt-1.5">主衛浴：空閒</p>
+                    <p id="hero-bath-desc" class="text-xs sm:text-sm text-stone-600 mt-1">目前無人使用</p>
+                  </div>
+                  <div class="pt-2 border-t border-dashed border-stone-300 text-xs sm:text-sm text-stone-600">
+                    <div class="flex items-center justify-between gap-1">
+                      <span class="text-stone-500 whitespace-nowrap font-medium">洗衣機</span>
+                      <span id="hero-laundry-text" class="font-mono font-medium text-stone-900 whitespace-nowrap">無待洗/待取</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 卡片 3: 家務與物資速記 -->
+                <div class="p-4 sm:p-4.5 rounded-xl border border-stone-400 bg-paper-50 space-y-2.5 flex flex-col justify-between min-h-[165px] sm:min-h-[185px]">
+                  <div>
+                    <div class="flex items-center justify-between pb-1">
+                      <span class="text-[10px] sm:text-[11px] font-mono font-bold uppercase tracking-wider text-stone-500 whitespace-nowrap shrink-0">Chores & Supply</span>
+                      <span class="px-2 py-0.5 text-xs font-semibold border border-stone-400 text-stone-600 rounded whitespace-nowrap shrink-0">今日</span>
+                    </div>
+                    <p id="hero-chore-line" class="text-base sm:text-lg lg:text-xl font-bold text-stone-900 flex items-center gap-1.5 leading-snug mt-1.5">
+                      <span class="w-2 h-2 rounded-full bg-stone-900 inline-block"></span> 倒垃圾 (20:45)
+                    </p>
+                    <div id="hero-supply-alert-box" class="text-xs sm:text-sm text-stone-600 mt-1 flex items-center gap-1">
+                      <span class="font-bold text-emerald-800">物資：</span> 公用物資尚足
+                    </div>
+                  </div>
+                  <div class="pt-2 text-xs sm:text-sm text-stone-500 flex justify-between items-center border-t border-dashed border-stone-300">
+                    <span id="hero-last-refreshed" class="font-mono">更新：剛剛</span>
+                    <button type="button" onclick="syncAndFlash()" class="font-mono text-stone-700 underline hover:text-stone-900 cursor-pointer">手動重繪</button>
+                  </div>
+                </div>
+
+              </div>
+
+            <!-- 電子紙底部廣播便條 (字級放大) -->
+              <div class="mt-5 sm:mt-6 pt-3.5 sm:pt-4 border-t border-stone-300 flex items-center justify-between text-xs sm:text-sm font-mono text-stone-600">
+                <span class="flex items-center gap-2">
+                  <i data-lucide="radio" class="w-4 h-4 text-stone-500"></i>
+                  <strong class="text-stone-900">廣播：</strong>
+                  <span id="hero-broadcast-note">全屋公告：暫無即時廣播事項</span>
+                </span>
+                <span class="hidden sm:inline-block">NO BACKLIGHT • ULTRA-LOW POWER</span>
+              </div>
+
+            </div>
+
+            <!-- 硬體底部標誌 -->
+            <div class="mt-3.5 flex items-center justify-between px-2 text-xs sm:text-sm text-stone-400 font-mono">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-stone-500 inline-block"></span>
+                <span>POWERED BY ESP32 DEEP-SLEEP ENGINE</span>
+              </div>
+              <span>SYNK.STUDIO</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 3. 簡報式滾動專區 (Interactive Slide Deck Presentation) -->
+  <!-- ======================================================== -->
+  <section id="presentation" class="relative min-h-[calc(100vh-4rem)] flex flex-col justify-center py-8 sm:py-10 bg-paper-100 border-t border-b border-stone-300/80">
+    <div class="max-w-7xl 2xl:max-w-[1440px] mx-auto px-4 sm:px-8 mb-6 sm:mb-8 text-center">
+      <div class="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-stone-500 mb-1.5">
+        <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+        <span>Feature Tour / 功能導覽</span>
+      </div>
+      <h2 class="text-2xl sm:text-3xl font-black text-stone-900 tracking-tight text-center">
+        像翻閱紙本般，切換每個共居生活片刻
+      </h2>
+
+      <!-- 簡報切換控制器 (4個分頁導覽按鈕 + 前後頁切換) -->
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-3 mt-4">
+        <div class="inline-flex items-center p-1 bg-stone-200/70 rounded-full border border-stone-300/80 gap-1 shadow-inner">
+          <button type="button" onclick="goToSlide(0)" class="slide-tab-pill px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-mono font-bold bg-stone-900 text-white shadow-sm transition cursor-pointer">
+            01 設計初心
+          </button>
+          <button type="button" onclick="goToSlide(1)" class="slide-tab-pill px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-mono font-medium bg-white/90 hover:bg-stone-100 text-stone-600 border border-stone-300 transition cursor-pointer">
+            02 隱私感知
+          </button>
+          <button type="button" onclick="goToSlide(2)" class="slide-tab-pill px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-mono font-medium bg-white/90 hover:bg-stone-100 text-stone-600 border border-stone-300 transition cursor-pointer">
+            03 家務物資
+          </button>
+          <button type="button" onclick="goToSlide(3)" class="slide-tab-pill px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-mono font-medium bg-white/90 hover:bg-stone-100 text-stone-600 border border-stone-300 transition cursor-pointer">
+            04 軟硬技術
+          </button>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="navigateSlide(-1)" class="w-8 h-8 rounded-full border border-stone-400 hover:border-stone-900 bg-white flex items-center justify-center transition shadow-sm hover:scale-105 cursor-pointer" title="上一頁">
+            <i data-lucide="chevron-left" class="w-4 h-4"></i>
+          </button>
+          <span id="slide-indicator" class="font-mono text-xs sm:text-sm px-2 text-stone-600 font-bold min-w-[54px] text-center">01 / 04</span>
+          <button type="button" onclick="navigateSlide(1)" class="w-8 h-8 rounded-full border border-stone-400 hover:border-stone-900 bg-white flex items-center justify-center transition shadow-sm hover:scale-105 cursor-pointer" title="下一頁">
+            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 簡報主舞台 (Deck Slides) -->
+    <div class="max-w-7xl 2xl:max-w-[1440px] mx-auto px-4 sm:px-8">
+        <div class="relative bg-white rounded-[32px] sm:rounded-[36px] border border-stone-300 shadow-eink overflow-hidden min-h-[580px] lg:h-[580px] flex items-center">
+            <!-- ================= SLIDE 1: 設計初心 ================= -->
+            <div class="slide-item w-full p-8 sm:p-12 lg:p-14 transition-all duration-300 ease-out grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center" data-index="0">
+                <div class="w-full flex flex-col justify-between h-[420px]">
+                    <div class="space-y-3">
+                        <div class="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-stone-500 h-6">
+                            <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+                            <span>SLIDE 01 : 為什麼是電子紙？</span>
+                        </div>
+                        <h3 id="view-slide-0-title" class="text-2xl sm:text-3xl font-extrabold text-stone-900 leading-snug min-h-[72px] sm:min-h-[84px] flex flex-col justify-center">
+                            不是另一塊讓人分心的發光螢幕，<br class="hidden sm:inline" />而是一張會自動更新的紙。
+                        </h3>
+                        <div class="text-stone-600 leading-relaxed text-sm sm:text-base space-y-1 min-h-[84px] flex flex-col justify-center">
+                            <p>現代人生活已被過多的通知、強烈藍光與發熱淹沒。若門口再掛著發光螢幕，只會帶來科技焦慮。</p>
+                            <p>電子紙擁有漫反射無光害特性，能溫和融入居家木質與白牆，就像一張自然貼在牆上的便利貼。</p>
+                        </div>
+                    </div>
+                    <!-- 三行帶圓角標籤條列 -->
+                    <div class="space-y-2.5 text-sm text-stone-700 w-full">
+                        <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-stone-900">一般發光平板：</span>
+                                <span class="text-stone-600">強烈藍光刺眼、每日需充電、通知臃腫</span>
+                            </div>
+                            <span class="font-mono text-xs bg-stone-200 px-2.5 py-1 rounded text-stone-800 font-bold shrink-0 min-w-[80px] text-center">傳統螢幕</span>
+                        </div>
+                        <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-stone-900">漫反射無光害：</span>
+                                <span class="text-stone-600">零發光零眩光，自然融入白牆與木質氛圍</span>
+                            </div>
+                            <span class="font-mono text-xs bg-stone-200 px-2.5 py-1 rounded text-stone-800 font-bold shrink-0 min-w-[80px] text-center">自然融入</span>
+                        </div>
+                        <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-stone-900">極簡安靜續航：</span>
+                                <span class="text-stone-600">靜態畫面零耗電，長達 180 天長效續航</span>
+                            </div>
+                            <span class="font-mono text-xs bg-stone-200 px-2.5 py-1 rounded text-stone-800 font-bold shrink-0 min-w-[80px] text-center">平靜科技</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- 右側看板：完全按照原本的 -->
+                <div class="w-full flex justify-center items-center h-[420px]">
+                    <div class="w-full max-w-[420px] bg-stone-100 p-6 rounded-2xl border border-stone-300 space-y-4 mx-auto">
+                        <div class="h-44 rounded-xl bg-stone-900 text-stone-200 p-6 flex flex-col justify-between relative overflow-hidden">
+                            <span class="text-xs font-mono text-stone-400"># 傳統智慧螢幕常遇到的窘境</span>
+                            <p class="text-lg font-medium text-stone-100">半夜客廳亮晃晃發著藍光，耗電發燙，室友嫌刺眼拔掉插頭，從此淪為電子垃圾。</p>
+                            <div class="text-[11px] text-rose-400 font-mono">HIGH DISTRACTION & FRICTION</div>
+                        </div>
+                        <div class="h-44 rounded-xl bg-eink-cream text-stone-900 p-6 flex flex-col justify-between border-2 border-stone-900 relative">
+                            <span class="text-xs font-mono text-stone-500"># Synk.paper 的自然融入</span>
+                            <p class="text-lg font-bold text-stone-900">像日曆一樣自然存在，靜態畫面零耗電，只在真正需要時給予溫柔的提醒。</p>
+                            <div class="text-[11px] font-mono text-emerald-800 font-bold">CALM TECHNOLOGY (平靜科技)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= SLIDE 2: 隱私與生活邊界 ================= -->
+            <div class="slide-item hidden w-full p-8 sm:p-12 lg:p-14 transition-all duration-300 ease-out grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center" data-index="1">
+                <div class="w-full flex flex-col justify-between h-[420px]">
+                    <div class="space-y-3">
+                        <div class="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-stone-500 h-6">
+                            <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+                            <span>SLIDE 02 : 隱私感知與社交電量</span>
+                        </div>
+                        <h3 id="view-slide-1-title" class="text-2xl sm:text-3xl font-extrabold text-stone-900 leading-snug min-h-[72px] sm:min-h-[84px] flex flex-col justify-center">
+                            免敲門、免寒暄，<br class="hidden sm:inline" />一眼看透彼此的「社交電量」。
+                        </h3>
+                        <div class="text-stone-600 leading-relaxed text-sm sm:text-base space-y-1 min-h-[84px] flex flex-col justify-center">
+                            <p>結束整天工作回家，有時只想一個人安靜充電，卻不好意思直接回絕熱情的室友。</p>
+                            <p>Synk.paper 支援門外磁吸快速切換，用視覺化的燈號與字句，優雅劃出彼此的隱私邊界。</p>
+                        </div>
+                    </div>
+                    <!-- 三行帶圓角標籤條列 -->
+                    <div class="space-y-2.5 text-sm text-stone-700 w-full">
+                        <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-stone-900">專注會議紅標：</span>
+                                <span class="text-stone-600">讓外面的人主動降低音量與腳步</span>
+                            </div>
+                            <span class="font-mono text-xs bg-stone-200 px-2.5 py-1 rounded text-stone-800 font-bold shrink-0 min-w-[80px] text-center">請勿敲門</span>
+                        </div>
+                        <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-stone-900">社交電量百分比：</span>
+                                <span class="text-stone-600">今天剩 10% 請勿餵食，明天滿血復活</span>
+                            </div>
+                            <span class="font-mono text-xs bg-stone-200 px-2.5 py-1 rounded text-stone-800 font-bold shrink-0 min-w-[80px] text-center">充電中</span>
+                        </div>
+                        <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-stone-900">訪客預告提醒：</span>
+                                <span class="text-stone-600">提早告知客廳有客人，穿著更有心理準備</span>
+                            </div>
+                            <span class="font-mono text-xs bg-stone-200 px-2.5 py-1 rounded text-stone-800 font-bold shrink-0 min-w-[80px] text-center">預告提醒</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- 右側看板：完全按照原本的 -->
+                <div class="w-full flex justify-center items-center h-[420px]">
+                    <div class="w-full max-w-[420px] p-6 bg-paper-100 border-2 border-stone-800 rounded-2xl shadow-md space-y-4 text-center mx-auto">
+                        <span class="text-xs font-mono uppercase text-stone-500">門口掛牌實境模擬</span>
+                        <div class="bg-white p-6 rounded-xl border border-stone-300 shadow-sm space-y-3">
+                            <div class="inline-block px-3 py-1 rounded bg-stone-900 text-white font-mono text-xs">
+                                FOCUS MODE // 房門外狀態
+                            </div>
+                            <h4 class="text-2xl font-black text-stone-900">線上研討會演講中</h4>
+                            <p class="text-xs text-stone-500">預計 17:30 結束 ｜ 有急事請先傳 LINE</p>
+                            <div class="w-full bg-stone-200 h-1.5 rounded-full mt-4">
+                                <div class="bg-eink-red h-full rounded-full" style="width: 75%"></div>
+                            </div>
+                        </div>
+                        <p class="text-[11px] text-stone-500">可配合磁吸實體開關或快捷手機後台一鍵切換</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= SLIDE 3: 家務與物資 ================= -->
+            <div class="slide-item hidden w-full p-8 sm:p-12 lg:p-14 transition-all duration-300 ease-out grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center" data-index="2">
+                <div class="w-full flex flex-col justify-between h-[420px]">
+                    <div class="space-y-3">
+                        <div class="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-stone-500 h-6">
+                            <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+                            <span>SLIDE 03 : 家務排班與公用物資</span>
+                        </div>
+                        <h3 id="view-slide-2-title" class="text-2xl sm:text-3xl font-extrabold text-stone-900 leading-snug min-h-[72px] sm:min-h-[84px] flex flex-col justify-center">
+                            告別「我以為你會倒」，<br class="hidden sm:inline" />終結共居生活的家務猜忌日常。
+                        </h3>
+                        <div class="text-stone-600 leading-relaxed text-sm sm:text-base space-y-1 min-h-[84px] flex flex-col justify-center">
+                            <p>共同生活最容易因「瑣事權責不清」累積怨氣，例如以為對方會倒垃圾或買洗碗精。</p>
+                            <p>Synk.paper 把隱形的家務責任變成顯性的視覺卡片，路過客廳一眼就能確認進度。</p>
+                        </div>
+                    </div>
+                    <!-- 三行帶圓角標籤條列 -->
+                    <div class="space-y-2.5 text-sm text-stone-700 w-full">
+                        <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-stone-900">專注會議紅標：</span>
+                                <span class="text-stone-600">讓外面的人主動降低音量與腳步</span>
+                            </div>
+                            <span class="font-mono text-xs bg-stone-200 px-2.5 py-1 rounded text-stone-800 font-bold shrink-0 min-w-[80px] text-center">請勿敲門</span>
+                        </div>
+                        <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-stone-900">垃圾車倒數警報：</span>
+                                <span class="text-stone-600">自動連動在地定點垃圾車時程</span>
+                            </div>
+                            <span class="font-mono text-xs bg-stone-200 px-2.5 py-1 rounded text-stone-800 font-bold shrink-0 min-w-[80px] text-center">20:45 抵達</span>
+                        </div>
+                        <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-stone-900">衛浴洗澡排隊佇列：</span>
+                                <span class="text-stone-600">按一下排隊，輪到你看板輕響蜂鳴</span>
+                            </div>
+                            <span class="font-mono text-xs bg-stone-200 px-2.5 py-1 rounded text-stone-800 font-bold shrink-0 min-w-[80px] text-center">免站門口空等</span>
+                        </div>
+                        <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-stone-900">耗材一鍵採買通知：</span>
+                                <span class="text-stone-600">路過冰箱按 +1，室友超商即刻救援</span>
+                            </div>
+                            <span class="font-mono text-xs bg-stone-200 px-2.5 py-1 rounded text-stone-800 font-bold shrink-0 min-w-[80px] text-center">告別空紙筒</span>
+                        </div>
+                    </div>
+                </div>
+                   
+                <!-- 右側看板：完全按照原本的 -->
+                <div class="w-full flex justify-center items-center h-[420px]">
+                    <div class="w-full max-w-[420px] bg-white p-6 rounded-2xl border-2 border-stone-800 shadow-md space-y-4 mx-auto">
+                        <div class="flex items-center justify-between border-b border-stone-200 pb-3">
+                            <span class="text-xs font-mono font-bold text-stone-500">SHARED SUPPLIES // 採買清單</span>
+                            <span class="text-[10px] bg-stone-100 text-stone-600 px-2 py-0.5 rounded font-mono">即時同步中</span>
+                        </div>
+                        <div class="space-y-2 text-xs" id="slide-supplies-preview">
+                            <!-- 動態注入耗材預覽 -->
+                        </div>
+                        <div class="p-3 bg-stone-900 text-paper-50 rounded-lg text-center text-xs font-medium">
+                            路過超市的人，手機會收到清單推播通知
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= SLIDE 4: 技術亮點與 IoT ================= -->
+            <div class="slide-item hidden w-full p-8 sm:p-12 lg:p-14 transition-all duration-300 ease-out grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center" data-index="3">
+                <div class="w-full flex flex-col justify-between h-[420px]">
+                    <div class="space-y-3">
+                        <div class="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-stone-500 h-6">
+                            <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+                            <span>SLIDE 04 : 軟硬體技術含金量</span>
+                        </div>
+                        <h3 id="view-slide-3-title" class="text-2xl sm:text-3xl font-extrabold text-stone-900 leading-snug min-h-[72px] sm:min-h-[84px] flex flex-col justify-center">
+                            極限低功耗物聯網架構，<br class="hidden sm:inline" />兼具美學與工程實力。
+                        </h3>
+                        <div class="text-stone-600 leading-relaxed text-sm sm:text-base space-y-1 min-h-[84px] flex flex-col justify-center">
+                            <p>身為畢業專題核心，我們完成硬體 PCB 電路設計、電源管理到 MQTT 即時推播的完整開發。</p>
+                            <p>自研的深度休眠排程算法，讓設備在無背光靜態顯示下達到真正極限的超低功耗。</p>
+                        </div>
+                    </div>
+                    <!-- 三行帶圓角標籤條列 -->
+                    <div class="space-y-2.5 text-sm text-stone-700 w-full">
+                        <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-stone-900">微控制器電源管理：</span>
+                                <span class="text-stone-600">ESP32 深度休眠機制，靜態待機電流低於 15μA</span>
+                            </div>
+                            <span class="font-mono text-xs bg-stone-200 px-2.5 py-1 rounded text-stone-800 font-bold shrink-0 min-w-[80px] text-center">ESP32-S3</span>
+                        </div>
+                        <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-stone-900">輕量數據即時傳輸：</span>
+                                <span class="text-stone-600">MQTT & Webhook 架構，手機操作 1.2 秒響應</span>
+                            </div>
+                            <span class="font-mono text-xs bg-stone-200 px-2.5 py-1 rounded text-stone-800 font-bold shrink-0 min-w-[80px] text-center">MQTT 通訊</span>
+                        </div>
+                        <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-stone-900">電子墨水局部刷新：</span>
+                                <span class="text-stone-600">雙色局部刷新演算法，大幅減少全螢幕閃爍</span>
+                            </div>
+                            <span class="font-mono text-xs bg-stone-200 px-2.5 py-1 rounded text-stone-800 font-bold shrink-0 min-w-[80px] text-center">7.5" EPD</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- 右側看板：完全按照原本的 -->
+                <div class="w-full flex justify-center items-center h-[420px]">
+                    <!-- 系統架構簡圖 -->
+                    <div class="w-full max-w-[420px] bg-stone-900 text-stone-200 p-6 rounded-2xl border border-stone-700 space-y-4 font-mono text-xs mx-auto">
+                        <div class="flex items-center justify-between pb-2 border-b border-stone-700 text-stone-400">
+                            <span>SYSTEM ARCHITECTURE DIAGRAM</span>
+                            <span class="text-emerald-400 font-bold">STATUS: VERIFIED</span>
+                        </div>
+                        <div class="p-3 bg-stone-800/80 rounded border border-stone-700 flex items-center justify-between">
+                            <span>[ 用戶端 ] 手機 Web 後台 / 實體磁吸按鈕</span>
+                            <span class="text-amber-400 font-bold">INPUT</span>
+                        </div>
+                        <div class="text-center text-stone-500 text-base">↓ (REST / MQTT Broker)</div>
+                        <div class="p-3 bg-stone-800/80 rounded border border-stone-700 flex items-center justify-between">
+                            <span>[ 雲端中樞 ] Node.js + Firebase 即時狀態資料庫</span>
+                            <span class="text-blue-400 font-bold">SYNC ENGINE</span>
+                        </div>
+                        <div class="text-center text-stone-500 text-base">↓ (Wi-Fi 802.11 b/g/n)</div>
+                        <div class="p-3 bg-stone-800/80 rounded border border-stone-700 flex items-center justify-between">
+                            <span>[ 終端節點 ] ESP32 微控制器 + 電子紙螢幕</span>
+                            <span class="text-eink-red font-bold">EPD REFRESH</span>
+                        </div>
+                        <div class="text-[10px] text-stone-400 pt-2 text-right">
+                            # 自研電源排程算法已通過 90 天不插電連續穩定測試
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 4. 虛擬電子紙動態模擬器 (Interactive Simulator) -->
+  <!-- ======================================================== -->
+  <section id="interactive-simulator" class="relative min-h-[calc(100vh-4rem)] flex flex-col justify-center py-6 sm:py-10 px-4 sm:px-8 max-w-7xl 2xl:max-w-[1440px] mx-auto">
+  <div class="w-full my-auto space-y-4 sm:space-y-5.5 flex flex-col justify-center">
+    <!-- 頂部定位標籤與標題 (格式100%統一、小標無外框灰字、標題置中) -->
+    <div class="text-center max-w-3xl sm:max-w-4xl mx-auto mb-4 sm:mb-5">
+      <div class="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-stone-500 mb-1.5">
+        <i data-lucide="play" class="w-3.5 h-3.5"></i>
+        <span>Interactive Playground / 線上體驗</span>
+      </div>
+      <h2 class="text-2xl sm:text-3xl lg:text-4xl font-black text-stone-900 mb-2 tracking-tight text-center">
+        親手試試看：電子紙畫面即時刷新
+      </h2>
+      <p class="text-stone-600 text-sm sm:text-base max-w-4xl mx-auto leading-relaxed whitespace-nowrap text-center">
+        點擊左側不同的情境按鈕，體驗真實電子墨水螢幕特有的「局部黑白反轉與重繪刷新」細節。
+      </p>
+    </div>
+
+    <!-- 雙欄操作體驗區 (左右比例 5:7，右側看板規格完全比照首頁 Hero 看板 1:1 等大) -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 xl:gap-12 items-center w-full">
+      
+      <!-- 左側：控制按鍵區 (5 欄) -->
+      <div class="lg:col-span-5 space-y-3.5 sm:space-y-4">
+        <div class="flex items-center justify-between pb-1">
+          <label for="note-author-input" class="text-xs sm:text-sm font-mono font-bold uppercase text-stone-500 tracking-wider">
+            快速模擬情境切換：
+          </label>
+          <span class="text-xs font-mono text-stone-400">點擊即刷墨</span>
+        </div>
+        
+        <button type="button" id="sim-btn-work" onclick="setSimulatorState('work')" class="sim-btn w-full min-h-[68px] p-4 sm:p-4.5 rounded-2xl border-2 border-stone-900 bg-stone-50 text-left font-medium transition flex items-center justify-between group active:scale-[0.98] shadow-sm cursor-pointer">
+          <div class="flex items-center gap-3.5">
+            <span class="w-3 h-3 rounded-full bg-eink-red animate-pulse shrink-0"></span>
+            <div>
+              <div class="font-bold text-sm sm:text-base text-stone-900 leading-tight">情境一：線上會議勿擾</div>
+              <div class="text-xs text-stone-500 mt-1">門外即刻顯示請勿敲門</div>
+            </div>
+          </div>
+          <i data-lucide="arrow-right" class="w-4 h-4 text-stone-900 shrink-0"></i>
+        </button>
+
+        <button type="button" id="sim-btn-chill" onclick="setSimulatorState('chill')" class="sim-btn w-full min-h-[68px] p-4 sm:p-4.5 rounded-2xl border border-stone-300 bg-white hover:border-stone-900 text-left font-medium transition flex items-center justify-between group active:scale-[0.98] cursor-pointer">
+          <div class="flex items-center gap-3.5">
+            <span class="w-3 h-3 rounded-full bg-stone-400 shrink-0"></span>
+            <div>
+              <div class="font-bold text-sm sm:text-base text-stone-900 leading-tight">情境二：放鬆放空中・低社交</div>
+              <div class="text-xs text-stone-500 mt-1">溫柔傳達需要獨處休息</div>
+            </div>
+          </div>
+          <i data-lucide="arrow-right" class="w-4 h-4 text-stone-400 group-hover:text-stone-900 transition-transform group-hover:translate-x-1 shrink-0"></i>
+        </button>
+
+        <button type="button" id="sim-btn-party" onclick="setSimulatorState('party')" class="sim-btn w-full min-h-[68px] p-4 sm:p-4.5 rounded-2xl border border-stone-300 bg-white hover:border-stone-900 text-left font-medium transition flex items-center justify-between group active:scale-[0.98] cursor-pointer">
+          <div class="flex items-center gap-3.5">
+            <span class="w-3 h-3 rounded-full bg-amber-500 shrink-0"></span>
+            <div>
+              <div class="font-bold text-sm sm:text-base text-stone-900 leading-tight">情境三：今晚有訪客預告</div>
+              <div class="text-xs text-stone-500 mt-1">預約客廳沙發交誼區域</div>
+            </div>
+          </div>
+          <i data-lucide="arrow-right" class="w-4 h-4 text-stone-400 group-hover:text-stone-900 transition-transform group-hover:translate-x-1 shrink-0"></i>
+        </button>
+
+        <div class="pt-1">
+          <button type="button" id="sim-btn-supply" onclick="triggerSupplyAlertSim()" class="w-full min-h-[46px] p-3 rounded-xl border border-dashed border-stone-400 hover:border-stone-800 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs sm:text-sm font-medium transition flex items-center justify-center gap-2 cursor-pointer active:scale-95">
+            <i data-lucide="shopping-cart" class="w-4 h-4 text-stone-600"></i>
+            <span id="sim-btn-supply-text">模擬按下「衛生紙快沒了 +1」</span>
+          </button>
+        </div>
+
+        <!-- 科技細節引導說明卡 -->
+        <div class="p-3.5 sm:p-4 rounded-2xl bg-paper-50 border border-stone-300 text-xs text-stone-600 leading-relaxed space-y-1">
+          <div class="flex items-center gap-2 font-bold text-stone-900">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-stone-700"></i>
+            <span>真實電子墨水物理刷新細節</span>
+          </div>
+          <p>每次切換情境，硬體即透過微電流反轉電子墨水微膠囊（黑白粒子電泳），達到零耗電靜態顯示與純淨紙感。</p>
+        </div>
+      </div>
+
+      <!-- 右側：擬真電子紙看板顯示端 (7 欄 - 與首頁 Hero 看板 1:1 完全一致超大尺寸 780px~820px) -->
+      <div class="lg:col-span-7 relative w-full flex items-center justify-center">
+        <!-- 電子紙實體渲染 Mockup 容器 (寬度放大到 780px~820px，與首頁 Hero 看板完全一致) -->
+        <div class="relative w-full max-w-xl lg:max-w-3xl xl:max-w-[780px] 2xl:max-w-[820px] mx-auto">
+          <!-- 柔和陰影底座 -->
+          <div class="absolute -inset-5 bg-gradient-to-b from-stone-300/40 to-transparent rounded-3xl blur-2xl -z-10"></div>
+
+          <!-- 硬體外框 (與首頁 Hero 看板完全一致的材質、厚度與圓角) -->
+          <div class="bg-[#2D2A26] p-4 sm:p-5.5 lg:p-6 xl:p-6.5 rounded-[30px] sm:rounded-[36px] shadow-hardware border-[3px] sm:border-[4px] border-[#3F3B36] relative">
+            
+            <!-- 頂部實體按鍵與狀態針孔燈 -->
+            <div class="absolute top-3.5 right-10 sm:right-12 flex items-center gap-2.5">
+              <div class="w-2 h-2 rounded-full bg-stone-600"></div>
+              <div class="w-2 h-2 rounded-full bg-stone-600"></div>
+              <div class="w-10 h-2.5 rounded-full bg-stone-700 flex items-center justify-center text-[9px] font-mono text-stone-400">EPD</div>
+            </div>
+
+            <!-- 電子紙螢幕本體 (Hero 規格尺寸，套用 einkRefresh 動畫) -->
+            <div id="virtual-eink-screen" class="bg-eink-cream rounded-2xl p-5 sm:p-7 text-stone-900 border border-stone-400/40 relative shadow-inner overflow-hidden font-sans select-none min-h-[320px] sm:min-h-[350px] flex flex-col justify-between transition-all">
+              
+              <!-- 電子紙表面細微反光質感 -->
+              <div class="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none"></div>
+
+              <!-- 狀態頂欄 -->
+              <div class="flex items-center justify-between border-b border-stone-400 pb-3.5 mb-4 font-mono text-xs sm:text-sm text-stone-700">
+                <div class="flex items-center gap-2.5 sm:gap-3">
+                  <span class="font-bold text-sm sm:text-base tracking-tight text-stone-900 flex items-center gap-2">
+                    <i data-lucide="cpu" class="w-4 h-4 sm:w-5 sm:h-5"></i> NODE: DOOR-A
+                  </span>
+                  <span class="px-2 py-0.5 border border-stone-400 rounded text-[11px] font-mono">Wi-Fi 即時同步</span>
+                </div>
+                <div class="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm">
+                  <span id="refresh-status" class="font-mono text-stone-500 font-bold">IDLE (0W)</span>
+                  <span id="sim-screen-time" class="font-bold text-sm sm:text-base">13:13</span>
+                  <div class="flex items-center gap-1.5 border border-stone-500 rounded px-2 py-0.5">
+                    <i data-lucide="battery" class="w-3.5 h-3.5"></i>
+                    <span class="text-[11px]">94%</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 主體動態狀態內容 (大氣排版、層次分明) -->
+              <div class="py-4 sm:py-5 space-y-3 sm:space-y-4" id="sim-screen-content">
+                <div class="inline-block px-3 py-1 rounded text-xs sm:text-sm font-bold bg-eink-red text-white uppercase tracking-wider shadow-2xs whitespace-nowrap" id="sim-screen-badge">
+                  DO NOT DISTURB
+                </div>
+                <h3 class="text-2xl sm:text-3xl lg:text-4xl font-black text-stone-900 tracking-tight" id="sim-screen-title">
+                  線上會議中・請勿敲門
+                </h3>
+                <p class="text-sm sm:text-base text-stone-600 leading-relaxed max-w-xl" id="sim-screen-desc">
+                  正在進行期末專題發表連線，預計 16:30 結束。急事請傳訊息。
+                </p>
+
+                <div class="pt-3.5 border-t border-dashed border-stone-300 flex items-center justify-between text-xs sm:text-sm">
+                  <span class="text-stone-500 font-mono font-medium">SOCIAL BATTERY (社交電量)</span>
+                  <span class="font-mono font-bold text-stone-900 text-sm sm:text-base" id="sim-screen-battery">15% 🪫 (CRITICAL LOW)</span>
+                </div>
+              </div>
+
+              <!-- 底部附加通知 -->
+              <div class="bg-paper-100 p-3 sm:p-3.5 rounded-xl border border-stone-300 text-xs sm:text-sm flex items-center justify-between font-mono">
+                <span id="sim-screen-footer-text" class="truncate font-medium text-stone-800">公用耗材狀態：衛生紙缺貨 (3人急需)</span>
+                <span class="text-stone-400 text-xs shrink-0 pl-2">SYNC OK</span>
+              </div>
+
+            </div>
+
+            <!-- 硬體底部標誌 (與首頁 Hero 看板完全一致) -->
+            <div class="mt-3.5 flex items-center justify-between px-2 text-xs sm:text-sm text-stone-400 font-mono">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-stone-500 inline-block"></span>
+                <span>POWERED BY ESP32 DEEP-SLEEP ENGINE</span>
+              </div>
+              <span>SYNK.STUDIO</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+  <!-- ======================================================== -->
+  <!-- 5. 規格表與畢專團隊 (Tech Specs & Capstone Team) -->
+  <!-- ======================================================== -->
+  <!-- 4. 室友紙感便條留言溝通系統 (Roommate Sticky Notes Wall) -->
+  <!-- ======================================================== -->
+  <section id="sticky-notes-wall" class="relative min-h-[calc(100vh-4rem)] flex flex-col justify-center py-12 md:py-16 px-4 sm:px-8 max-w-7xl 2xl:max-w-[1440px] mx-auto border-t border-stone-300/80">
+    <!-- 標題與引言 (格式100%統一、小標無外框灰字、標題置中、遇標點換行) -->
+    <div class="text-center max-w-3xl mx-auto mb-8 sm:mb-10">
+      <div class="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-stone-500 mb-1.5">
+        <i data-lucide="sticky-note" class="w-3.5 h-3.5"></i>
+        <span>Roommate Paper Note / 實時無聲便條溝通</span>
+      </div>
+      <h2 class="text-2xl sm:text-3xl lg:text-4xl font-black text-stone-900 tracking-tight text-center mb-2.5">
+        不便當面說的瑣碎小事，用溫暖的微紙便條傳遞
+      </h2>
+      <p class="text-stone-600 text-sm sm:text-base leading-relaxed text-center max-w-2xl mx-auto">
+        合租生活總有些尷尬碰撞？<br class="hidden sm:inline" />
+        透過專屬 APP 發布數位便條，電子紙看板以微膠囊紙感無聲同步呈現，告別尷尬衝突，<br>維持剛剛好的室友距離。
+      </p>
+    </div>
+
+    <!-- 雙欄互動體驗區：左側便條撰寫發送 / 右側電子紙實時便條白板 -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      
+      <!-- 左側：便條紙撰寫檯 (Composer) -->
+      <div class="lg:col-span-5 bg-paper-50 p-6 sm:p-7 rounded-3xl border border-stone-300 shadow-sm space-y-5">
+        <div class="flex items-center justify-between pb-3 border-b border-stone-200">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-eink-red animate-pulse"></span>
+            <span class="text-xs font-mono font-bold text-stone-800">撰寫室友便條 (APP 模擬)</span>
+          </div>
+          <span class="text-[11px] font-mono text-stone-500">雙向即時連動</span>
+        </div>
+
+        <!-- 稱呼 / 房號 -->
+        <div>
+          <label for="note-author-input" class="block text-xs font-mono font-bold text-stone-700 mb-1.5">您的房號與暱稱</label>
+          <div class="relative">
+            <input type="text" id="note-author-input" value="302 室友" placeholder="例如：Room 302 / A 房室友" class="w-full px-3.5 py-2 text-sm bg-white border border-stone-300 rounded-xl focus:outline-none focus:border-stone-900 transition" />
+            <i data-lucide="user" class="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+          </div>
+        </div>
+
+        <!-- 便條紙風格選擇 -->
+        <div>
+          <label for="preorder-housing" class="block text-xs font-mono font-bold text-stone-700 mb-1.5">選擇紙張色調</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button type="button" onclick="selectNoteStyle('white')" id="note-style-white" class="note-style-btn py-2 px-2 rounded-xl border-2 border-stone-900 bg-white text-stone-800 text-xs font-medium flex items-center justify-center gap-1.5 transition">
+              <span class="w-2 h-2 rounded-full bg-stone-900"></span> 墨水白紙
+            </button>
+            <button type="button" onclick="selectNoteStyle('red')" id="note-style-red" class="note-style-btn py-2 px-2 rounded-xl border border-stone-300 bg-red-50 text-eink-red text-xs font-medium flex items-center justify-center gap-1.5 transition hover:border-eink-red">
+              <span class="w-2 h-2 rounded-full bg-eink-red"></span> 專色紅警示
+            </button>
+            <button type="button" onclick="selectNoteStyle('cream')" id="note-style-cream" class="note-style-btn py-2 px-2 rounded-xl border border-stone-300 bg-amber-50 text-stone-800 text-xs font-medium flex items-center justify-center gap-1.5 transition hover:border-amber-400">
+              <span class="w-2 h-2 rounded-full bg-amber-500"></span> 暖米分享
+            </button>
+          </div>
+        </div>
+
+        <!-- 快捷情境範本 -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label for="preorder-housing" class="text-xs font-mono font-bold text-stone-700">生活情境快速套用</label>
+            <span class="text-[10px] text-stone-500 font-mono">點擊即代入</span>
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            <button type="button" onclick="applyNoteTemplate('🧻 客廳公用衛生紙快沒了，下一位採買室友記得補！')" class="px-2.5 py-1 rounded-lg bg-stone-200/80 hover:bg-stone-300 text-stone-700 text-xs font-medium transition active:scale-95">
+              🧻 衛生紙快沒了
+            </button>
+            <button type="button" onclick="applyNoteTemplate('🔇 今晚 23:30 線上專題開會，請大家客廳降低音量～')" class="px-2.5 py-1 rounded-lg bg-stone-200/80 hover:bg-stone-300 text-stone-700 text-xs font-medium transition active:scale-95">
+              🔇 線上開會請安靜
+            </button>
+            <button type="button" onclick="applyNoteTemplate('🥛 冰箱第二層有剛切好的水果，大家請自便免客氣！')" class="px-2.5 py-1 rounded-lg bg-stone-200/80 hover:bg-stone-300 text-stone-700 text-xs font-medium transition active:scale-95">
+              🥛 冰箱水果請自便
+            </button>
+            <button type="button" onclick="applyNoteTemplate('🧹 今日輪值提醒：記得晚上 20:45 倒垃圾！')" class="px-2.5 py-1 rounded-lg bg-stone-200/80 hover:bg-stone-300 text-stone-700 text-xs font-medium transition active:scale-95">
+              🧹 倒垃圾提醒
+            </button>
+          </div>
+        </div>
+
+        <!-- 便條文字內容 -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label for="preorder-housing" class="text-xs font-mono font-bold text-stone-700">便條內容 *</label>
+            <span id="note-char-count" class="text-[11px] font-mono text-stone-500">0 / 60 字</span>
+          </div>
+          <textarea id="note-content-input" rows="3" maxlength="60" oninput="updateNoteCharCount()" placeholder="寫下想貼給室友看的一句話..." class="w-full px-3.5 py-2.5 text-sm bg-white border border-stone-300 rounded-xl focus:outline-none focus:border-stone-900 transition resize-none"></textarea>
+        </div>
+
+        <!-- 送出按鈕 -->
+        <button type="button" onclick="postStickyNote()" class="w-full py-3 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition active:scale-95">
+          <i data-lucide="send" class="w-4 h-4"></i>
+          <span>貼上電子紙看板同步</span>
+        </button>
+      </div>
+
+      <!-- 右側：實體電子紙便條白板 (Board Display) -->
+      <div class="lg:col-span-7 bg-[#2D2A26] p-4 sm:p-6 rounded-3xl shadow-hardware border-[3px] border-[#3F3B36] relative">
+        <!-- 頂部實體標記 -->
+        <div class="flex items-center justify-between pb-3 mb-4 border-b border-stone-700/80 text-stone-400 font-mono text-xs">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span>MEMO BOARD SYNCED (EPD 7.5")</span>
+          </div>
+          <span id="note-board-count" class="text-stone-300 font-semibold">0 則待辦便條</span>
+        </div>
+
+        <!-- 電子紙白板畫布 -->
+        <div id="sticky-board-canvas" class="bg-eink-cream rounded-2xl p-4 sm:p-6 min-h-[380px] border border-stone-400/50 shadow-inner relative transition-all">
+          <div id="sticky-notes-container" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <!-- 動態渲染便條紙清單 -->
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ======================================================== -->
+  <section id="tech-specs" class="relative min-h-[calc(100vh-4rem)] flex flex-col justify-center py-12 md:py-16 px-4 sm:px-8 max-w-7xl 2xl:max-w-[1440px] mx-auto border-t border-stone-300/80">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-start">
+      
+      <!-- 規格列表 (放大字級與行距) -->
+      <div class="lg:col-span-7 space-y-6 sm:space-y-8">
+        <div>
+          <div class="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-stone-500 mb-1">
+            <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+            <span>Hardware Architecture / 硬體技術規格</span>
+          </div>
+          <h2 class="text-3xl sm:text-4xl lg:text-[44px] font-black text-stone-900 mt-2 tracking-tight">硬體技術規格表</h2>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-stone-700">
+            <tbody class="divide-y divide-stone-200" id="tech-specs-table-body">
+              <tr class="py-3.5">
+                <td class="py-3.5 sm:py-4 font-mono font-bold text-stone-900 w-[36%] text-sm sm:text-base">螢幕面板規格</td>
+                <td class="py-3.5 sm:py-4 text-stone-600 text-sm sm:text-base leading-relaxed">7.5 吋 E-Ink 電子墨水螢幕（黑白紅三色 / 800 × 480）</td>
+              </tr>
+              <tr class="py-3.5">
+                <td class="py-3.5 sm:py-4 font-mono font-bold text-stone-900 text-sm sm:text-base">核心處理器</td>
+                <td class="py-3.5 sm:py-4 text-stone-600 text-sm sm:text-base leading-relaxed">ESP32-S3 Dual-Core Xtensa LX7 @ 240MHz</td>
+              </tr>
+              <tr class="py-3.5">
+                <td class="py-3.5 sm:py-4 font-mono font-bold text-stone-900 text-sm sm:text-base">電源與續航</td>
+                <td class="py-3.5 sm:py-4 text-stone-600 text-sm sm:text-base leading-relaxed">3000mAh 可充式鋰電池，Type-C 介面，單次充電預估 180 天</td>
+              </tr>
+              <tr class="py-3.5">
+                <td class="py-3.5 sm:py-4 font-mono font-bold text-stone-900 text-sm sm:text-base">連線通訊技術</td>
+                <td class="py-3.5 sm:py-4 text-stone-600 text-sm sm:text-base leading-relaxed">Wi-Fi 802.11 b/g/n (2.4GHz) + Bluetooth 5 (LE) 快速配網</td>
+              </tr>
+              <tr class="py-3.5">
+                <td class="py-3.5 sm:py-4 font-mono font-bold text-stone-900 text-sm sm:text-base">機身與安裝方式</td>
+                <td class="py-3.5 sm:py-4 text-stone-600 text-sm sm:text-base leading-relaxed">PLA 環保材質 3D 列印霧面外殼、內嵌 N52 釹鐵硼強磁模組</td>
+              </tr>
+              <tr class="py-3.5">
+                <td class="py-3.5 sm:py-4 font-mono font-bold text-stone-900 text-sm sm:text-base">雲端後端技術</td>
+                <td class="py-3.5 sm:py-4 text-stone-600 text-sm sm:text-base leading-relaxed">Node.js、MQTT Broker、Google Cloud Functions、LINE Bot</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 畢業專題團隊與指導老師 (放大卡片與組員字級) -->
+      <div id="team" class="lg:col-span-5 bg-paper-50 p-8 sm:p-10 lg:p-11 rounded-[32px] sm:rounded-[36px] border-2 border-stone-300 space-y-7 shadow-sm">
+        <div>
+          <span class="text-xs sm:text-sm font-mono uppercase tracking-wider text-stone-500">CAPSTONE PROJECT CREW</span>
+          <h3 class="text-2xl sm:text-3xl font-black text-stone-900 mt-1">專案團隊</h3>
+          <p class="text-sm sm:text-base text-stone-500 mt-1">國立台北教育大學 數位科技設計學系 前端專案小組</p>
+        </div>
+
+        <div class="space-y-4 text-base" id="view-team-container">
+          <!-- 動態載入組員名單 -->
+        </div>
+
+        <div id="view-advisor-row" class="pt-4 border-t border-stone-200 text-xs sm:text-sm text-stone-600 flex items-center justify-between" style="display: none;">
+          <span id="view-advisor-wrap">指導教授：<strong id="view-advisor-name" class="font-bold text-stone-900"></strong></span>
+          <span id="view-project-code" class="font-mono text-stone-500"></span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 6. 展場預告與早鳥預約 (Footer / Pre-order CTA) -->
+  <!-- ======================================================== -->
+  
+  </main>
+
+  <footer class="bg-stone-900 text-stone-300 py-16 px-4 sm:px-6">
+    <div class="max-w-4xl mx-auto text-center space-y-6">‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵‵`
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-stone-800 text-stone-300 text-xs font-mono">
+        <i data-lucide="map-pin" class="w-3.5 h-3.5 text-eink-red"></i>
+        <span id="view-expo-venue">畢業成果展出資訊：</span>
+      </div>
+
+      <h2 class="text-3xl sm:text-4xl font-extrabold text-paper-50 tracking-tight">
+        想讓你的共居生活也多一份剛好的優雅嗎？
+      </h2>
+      <p class="text-stone-400 text-sm sm:text-base max-w-xl mx-auto">
+        還沒有東西 敬請期待。
+      </p>
+
+      <div class="pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 max-w-sm sm:max-w-md mx-auto w-full">
+        <button type="button" onclick="openPreorderModal()" class="w-full sm:w-48 sm:justify-self-end px-5 py-3.5 rounded-xl bg-paper-50 hover:bg-white text-stone-900 font-bold transition flex items-center justify-center gap-2 shadow-xs active:scale-95">
+          <i data-lucide="mail" class="w-4 h-4"></i>
+          <span>填寫預約表單</span>
+        </button>
+        <button type="button" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" class="w-full sm:w-48 sm:justify-self-start px-5 py-3.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-medium transition flex items-center justify-center shadow-xs active:scale-95">
+          回到頂部
+        </button>
+      </div>
+
+      <!-- 頁底版權列與低調後台入口 -->
+      <div class="pt-12 border-t border-stone-800 text-xs text-stone-500 font-mono flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-1.5 flex-wrap justify-center sm:justify-start">
+          <span>© 2026 Synk.paper Capstone Design Project. All rights reserved.</span>
+          <!-- 唯一且低調的後台管理入口 -->
+          <button type="button" onclick="requestAdminAccess()" class="text-stone-600 hover:text-stone-300 transition-colors p-1 rounded inline-flex items-center gap-1 ml-1" title="系統管理">
+            <i data-lucide="lock" class="w-3 h-3"></i>
+            <span class="text-[10px]">管理</span>
+          </button>
+        </div>
+        <span>DESIGNED WITH E-INK CALM TECHNOLOGY</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ======================================================== -->
+  <!-- 景深聚焦模式切換膠囊 (Depth of Field Focus Mode Toggle) -->
+  <!-- ======================================================== -->
+  <!-- ======================================================== -->
+  <!-- 浮動控制面板 (滾輪自動吸附換格 + 景深聚焦雙開關) -->
+  <!-- ======================================================== -->
+  <!-- 浮動控制面板 (滾輪自動吸附換格開關) -->
+  <!-- ======================================================== -->
+  <div class="fixed bottom-6 left-6 z-40 select-none">
+    <button type="button" id="snap-toggle-btn" onclick="toggleSnapMode()" class="px-3.5 py-2 rounded-full bg-paper-50/90 hover:bg-white border border-stone-300 text-stone-700 text-xs font-mono font-medium shadow-md hover:shadow-lg transition-all flex items-center gap-2 backdrop-blur-md active:scale-95" title="點擊切換滑動滾輪自動換格吸附功能">
+      <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" id="snap-dot-indicator"></span>
+      <span id="snap-toggle-text">滾輪自動吸附：開啟</span>
+    </button>
+  </div>
+
+
+
+  <!-- ======================================================== -->
+  <!-- 右側章節進度小圓點 (Right Side 6 Section Indicator Dots) -->
+  <!-- ======================================================== -->
+  <nav id="section-nav-dots" class="fixed right-5 top-1/2 -translate-y-1/2 z-40 hidden md:flex flex-col items-center gap-3 py-3 px-2 rounded-full bg-paper-100/80 backdrop-blur-md border border-stone-300 shadow-sm transition-opacity duration-300 select-none" aria-label="章節導航">
+    <button type="button" onclick="scrollToSectionIndex(0)" class="section-dot group relative p-1.5 focus:outline-none" data-index="0" title="01 產品亮點">
+      <span class="dot-circle block w-2.5 h-2.5 rounded-full transition-all duration-300 bg-stone-400 group-hover:scale-125 group-hover:bg-stone-700"></span>
+      <span class="absolute right-7 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded bg-stone-900 text-paper-50 text-[11px] font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-sm">01 產品亮點</span>
+    </button>
+    <button type="button" onclick="scrollToSectionIndex(1)" class="section-dot group relative p-1.5 focus:outline-none" data-index="1" title="02 功能導覽">
+      <span class="dot-circle block w-2.5 h-2.5 rounded-full transition-all duration-300 bg-stone-400 group-hover:scale-125 group-hover:bg-stone-700"></span>
+      <span class="absolute right-7 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded bg-stone-900 text-paper-50 text-[11px] font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-sm">02 功能導覽</span>
+    </button>
+    <button type="button" onclick="scrollToSectionIndex(2)" class="section-dot group relative p-1.5 focus:outline-none" data-index="2" title="03 線上體驗">
+      <span class="dot-circle block w-2.5 h-2.5 rounded-full transition-all duration-300 bg-stone-400 group-hover:scale-125 group-hover:bg-stone-700"></span>
+      <span class="absolute right-7 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded bg-stone-900 text-paper-50 text-[11px] font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-sm">03 動態模擬器</span>
+    </button>
+    <button type="button" onclick="scrollToSectionIndex(3)" class="section-dot group relative p-1.5 focus:outline-none" data-index="3" title="04 室友留言便條">
+      <span class="dot-circle block w-2.5 h-2.5 rounded-full transition-all duration-300 bg-stone-400 group-hover:scale-125 group-hover:bg-stone-700"></span>
+      <span class="absolute right-7 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded bg-stone-900 text-paper-50 text-[11px] font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-sm">04 室友便條</span>
+    </button>
+    <button type="button" onclick="scrollToSectionIndex(4)" class="section-dot group relative p-1.5 focus:outline-none" data-index="4" title="05 技術規格與團隊">
+      <span class="dot-circle block w-2.5 h-2.5 rounded-full transition-all duration-300 bg-stone-400 group-hover:scale-125 group-hover:bg-stone-700"></span>
+      <span class="absolute right-7 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded bg-stone-900 text-paper-50 text-[11px] font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-sm">05 規格與團隊</span>
+    </button>
+    <button type="button" onclick="scrollToSectionIndex(5)" class="section-dot group relative p-1.5 focus:outline-none" data-index="5" title="06 展覽資訊與頁尾">
+      <span class="dot-circle block w-2.5 h-2.5 rounded-full transition-all duration-300 bg-stone-400 group-hover:scale-125 group-hover:bg-stone-700"></span>
+      <span class="absolute right-7 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded bg-stone-900 text-paper-50 text-[11px] font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-sm">06 展覽頁尾</span>
+    </button>
+  </nav>
+
+
+
+
+  <!-- ======================================================== -->
+  <!-- 早鳥登記彈窗 (Pre-order Modal) -->
+  <!-- ======================================================== -->
+  
+  <!-- ======================================================== -->
+  <!-- APP 下載預約與敬請期待彈窗 (App Download Modal) -->
+  <!-- ======================================================== -->
+  <div id="app-download-modal" role="dialog" aria-modal="true" aria-labelledby="app-modal-title" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm hidden">
+    <div class="relative w-full max-w-md bg-paper-50 rounded-3xl p-6 sm:p-8 shadow-2xl border border-stone-300 transition-all text-center">
+      
+      <!-- 關閉按鈕 -->
+      <button type="button" onclick="closeAppDownloadModal()" class="absolute top-5 right-5 text-stone-400 hover:text-stone-700 p-1 rounded-lg">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <!-- App Logo 圖示 -->
+      <div class="w-14 h-14 rounded-2xl bg-stone-900 text-paper-50 flex items-center justify-center mx-auto mb-4 font-bold text-xl shadow-md">
+        S.
+      </div>
+
+      <!-- 標題與即將上線徽章 -->
+      <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-100 text-stone-700 border border-stone-200 text-xs font-mono font-bold mb-3">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span>雙平台開發中・即將上架 (Coming Soon)</span>
+      </div>
+
+      <h3 class="text-xl sm:text-2xl font-black text-stone-900 mb-2">
+        Synk.paper 專屬行動 APP
+      </h3>
+      
+      <p class="text-xs sm:text-sm text-stone-600 leading-relaxed mb-6">
+        沒意外的話APP將會在下學期完成。
+      </p>
+
+      <!-- 功能搶先看亮點 -->
+      <div class="grid grid-cols-3 gap-2.5 mb-6 text-left">
+        <div class="p-2.5 rounded-xl bg-white border border-stone-200">
+          <div class="text-stone-900 mb-1">
+            <i data-lucide="smartphone" class="w-4 h-4"></i>
+          </div>
+          <div class="font-bold text-[11px] text-stone-900">遠端狀態</div>
+          <div class="text-[10px] text-stone-500">出門一鍵切換</div>
+        </div>
+
+        <div class="p-2.5 rounded-xl bg-white border border-stone-200">
+          <div class="text-stone-900 mb-1">
+            <i data-lucide="bell" class="w-4 h-4"></i>
+          </div>
+          <div class="font-bold text-[11px] text-stone-900">即時推播</div>
+          <div class="text-[10px] text-stone-500">衛浴洗脫提醒</div>
+        </div>
+
+        <div class="p-2.5 rounded-xl bg-white border border-stone-200">
+          <div class="text-stone-900 mb-1">
+            <i data-lucide="shopping-bag" class="w-4 h-4"></i>
+          </div>
+          <div class="font-bold text-[11px] text-stone-900">公用耗材</div>
+          <div class="text-[10px] text-stone-500">採買 +1 同步</div>
+        </div>
+      </div>
+
+      <!-- 預約上線通知表單 -->
+      <form id="app-notify-form" onsubmit="handleAppNotifySubmit(event)" class="space-y-3 text-left">
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-mono font-bold text-stone-700">接收通知 Email *</label>
+            <span id="app-notify-email-msg" class="text-[11px] font-mono hidden"></span>
+          </div>
+          <div class="flex gap-2">
+            <div class="relative flex-1">
+              <input type="email" id="app-notify-email" oninput="validateAppNotifyForm()" required placeholder="請輸入您的 Email 信箱" class="w-full px-3.5 py-2.5 text-xs bg-white border border-stone-300 rounded-xl focus:outline-none transition shadow-sm font-mono" />
+              <i data-lucide="check-circle-2" id="app-notify-email-check" class="w-4 h-4 text-emerald-500 absolute right-3 top-1/2 -translate-y-1/2 hidden"></i>
+            </div>
+            <button type="submit" class="px-4 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold transition shadow-sm whitespace-nowrap active:scale-95">
+              上線通知我
+            </button>
+          </div>
+        </div>
+        <p class="text-[10px] text-stone-400 text-center">上線時我們將第一時間寄送下載連結，絕不寄送廣告郵件。</p>
+      </form>
+
+      <!-- 登記成功提示 (預設隱藏) -->
+      <div id="app-notify-success" class="hidden py-4 text-center space-y-2">
+        <div class="w-10 h-10 bg-emerald-100 text-emerald-800 rounded-full flex items-center justify-center mx-auto">
+          <i data-lucide="check" class="w-5 h-5"></i>
+        </div>
+        <p class="font-bold text-sm text-stone-900">已成功加入預約通知清單！</p>
+        <p class="text-xs text-stone-500">APP 完成時時，我們將第一時間寄送下載載點至您的信箱。</p>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="preorder-modal" role="dialog" aria-modal="true" aria-labelledby="preorder-modal-title" class="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm hidden">
+    <div class="relative w-full max-w-lg bg-paper-50 rounded-2xl p-6 sm:p-8 shadow-2xl border border-stone-300">
+      <div class="flex items-center justify-between mb-4 pb-2 border-b border-stone-200">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+          <span class="text-xs font-mono font-bold text-stone-700">支持名額預約登記</span>
+        </div>
+        <button type="button" onclick="closePreorderModal()" class="text-stone-400 hover:text-stone-700">
+          ✕
+        </button>
+      </div>
+
+      <h3 class="text-xl font-bold text-stone-900 mb-2">成為第一批讓共居更融洽的先鋒使用者</h3>
+      <p class="text-xs text-stone-600 mb-6">填寫後我們將在完成時寄電子郵件邀請您參與測試。</p>
+
+      <form id="preorder-form" onsubmit="handlePreorderSubmit(event)" class="space-y-4">
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label for="preorder-name" class="block text-xs font-mono font-bold text-stone-700">您的稱呼 / 姓名 *</label>
+            <span id="preorder-name-msg" class="text-[11px] font-mono hidden"></span>
+          </div>
+          <div class="relative">
+            <input type="text" id="preorder-name" oninput="validatePreorderForm()" required placeholder="請輸入您的姓名或暱稱" class="w-full px-3.5 py-2.5 text-sm bg-white border border-stone-300 rounded-xl focus:outline-none transition" />
+            <i data-lucide="check-circle-2" id="preorder-name-check" class="w-4 h-4 text-emerald-500 absolute right-3 top-1/2 -translate-y-1/2 hidden"></i>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label for="preorder-email" class="block text-xs font-mono font-bold text-stone-700">聯絡 Email *</label>
+            <span id="preorder-email-msg" class="text-[11px] font-mono hidden"></span>
+          </div>
+          <div class="relative">
+            <input type="email" id="preorder-email" oninput="validatePreorderForm()" required placeholder="your.name@example.com" class="w-full px-3.5 py-2.5 text-sm bg-white border border-stone-300 rounded-xl focus:outline-none transition" />
+            <i data-lucide="check-circle-2" id="preorder-email-check" class="w-4 h-4 text-emerald-500 absolute right-3 top-1/2 -translate-y-1/2 hidden"></i>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-mono font-bold text-stone-700 mb-1">目前居住型態</label>
+          <select id="preorder-housing" class="w-full px-3.5 py-2.5 text-sm bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900">
+            <option>家庭式合租（與室友 2-4 人）</option>
+            <option>學校宿舍生活（4-6 人）</option>
+            <option>情侶伴侶同居</option>
+            <option>家庭親子共同生活</option>
+          </select>
+        </div>
+        <div class="pt-2">
+          <button type="submit" class="w-full py-3 bg-stone-900 hover:bg-stone-800 text-white font-medium rounded-xl transition text-sm flex items-center justify-center gap-2">
+            <span>提交預約</span>
+            <i data-lucide="check" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </form>
+
+      <!-- 成功提示 (預設隱藏) -->
+      <div id="preorder-success" class="hidden text-center py-6 space-y-3">
+        <div class="w-12 h-12 bg-emerald-100 text-emerald-800 rounded-full flex items-center justify-center mx-auto">
+          <i data-lucide="check-circle" class="w-6 h-6"></i>
+        </div>
+        <h4 class="text-lg font-bold text-stone-900">登記成功！感謝你的支持</h4>
+        <p class="text-xs text-stone-600">我們已確認您的信箱，歡迎繼續追蹤我們的進度！</p>
+        <button type="button" onclick="closePreorderModal()" class="mt-4 px-6 py-2 bg-stone-900 text-white rounded-lg text-xs">好的，繼續瀏覽</button>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- ======================================================== -->
+  <!-- 核心資料與互動控制邏輯 (JavaScript) -->
+  <!-- ======================================================== -->
+  <script src="main.js"></script>
+</body>
+</html>

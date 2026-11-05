@@ -1,0 +1,263 @@
+/* 穩定滾動槽位，徹底避免任何因切換簡報或滾動造成的水平位移與寬度跳動 */
+    html {
+      overflow-y: scroll;
+      scrollbar-gutter: stable;
+    }
+    /* 紙質紋理與電子紙刷新模擬動畫 */
+    body {
+      background-color: #F6F5F1;
+      color: #191816;
+      background-image: radial-gradient(#d6d3c9 0.75px, transparent 0.75px);
+      background-size: 24px 24px;
+    }
+
+    /* 電子紙局部反轉重繪動畫效果 */
+    @keyframes einkRefresh {
+      0% { filter: invert(0); opacity: 1; }
+      20% { filter: invert(1); opacity: 0.9; }
+      40% { filter: invert(0); opacity: 0.7; }
+      60% { filter: invert(0.9); opacity: 0.85; }
+      80% { filter: invert(0.1); opacity: 0.95; }
+      100% { filter: invert(0); opacity: 1; }
+    }
+
+    .eink-refreshing {
+      animation: einkRefresh 0.45s ease-in-out;
+    }
+
+    /* 隱藏滾動條但保持滾動 */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* 滑桿美化 */
+    input[type=range] {
+      accent-color: #D93829;
+    }
+  
+    /* 特製電子墨水與紙質游標樣式 (Custom E-ink Cursor) */
+    /* 僅在自訂游標成功運行時隱藏原生滑鼠，防止游標消失 */
+    body.custom-cursor-active,
+    body.custom-cursor-active a,
+    body.custom-cursor-active button,
+    body.custom-cursor-active input,
+    body.custom-cursor-active select,
+    body.custom-cursor-active textarea,
+    body.custom-cursor-active [role="button"],
+    body.custom-cursor-active .cursor-pointer {
+      cursor: none !important;
+    }
+
+    #custom-cursor-wrapper {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 99999;
+      overflow: hidden;
+      transition: opacity 0.25s ease-out;
+    }
+
+    #cursor-dot {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 7px;
+      height: 7px;
+      background-color: #191816;
+      border-radius: 50%;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      transition: width 0.15s ease, height 0.15s ease, background-color 0.15s ease, transform 0.08s ease-out;
+      will-change: transform;
+      z-index: 100000;
+    }
+
+    #cursor-follower {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 36px;
+      height: 36px;
+      border: 1.5px solid rgba(25, 24, 22, 0.45);
+      border-radius: 50%;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1), 
+                  height 0.22s cubic-bezier(0.16, 1, 0.3, 1), 
+                  border-color 0.2s ease, 
+                  background-color 0.2s ease, 
+                  border-radius 0.22s ease,
+                  box-shadow 0.2s ease;
+      will-change: transform;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 99999;
+    }
+
+    /* 懸停可互動元素狀態 (Buttons, Links, Cards) */
+    #custom-cursor-wrapper.is-hovering #cursor-follower {
+      width: 52px;
+      height: 52px;
+      border: 1.5px dashed #D93829;
+      background-color: rgba(217, 56, 41, 0.08);
+      transform: translate(-50%, -50%) rotate(45deg);
+    }
+
+    #custom-cursor-wrapper.is-hovering #cursor-dot {
+      width: 5px;
+      height: 5px;
+      background-color: #D93829;
+    }
+
+    /* 懸停在電子紙螢幕面板時 (Hero Screen / Simulator E-ink Display) */
+    #custom-cursor-wrapper.is-screen-hover #cursor-follower {
+      width: 60px;
+      height: 60px;
+      border: 1.5px solid #141413;
+      border-radius: 14px;
+      background-color: rgba(244, 242, 235, 0.3);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8) inset, 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    #custom-cursor-wrapper.is-screen-hover #cursor-badge {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    /* 懸停文字輸入框時 */
+    #custom-cursor-wrapper.is-text-hover #cursor-follower {
+      width: 22px;
+      height: 22px;
+      border-color: rgba(25, 24, 22, 0.25);
+      background-color: transparent;
+    }
+
+    #custom-cursor-wrapper.is-text-hover #cursor-dot {
+      background-color: #D93829;
+    }
+
+    /* 點擊墨水微膠囊擴散波紋動畫 */
+    @keyframes inkRipple {
+      0% {
+        transform: translate(-50%, -50%) scale(0.5);
+        opacity: 0.85;
+        border-color: #D93829;
+      }
+      50% {
+        border-color: #191816;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(2.8);
+        opacity: 0;
+        border-color: rgba(25, 24, 22, 0.1);
+      }
+    }
+
+    .cursor-ripple-effect {
+      position: fixed;
+      pointer-events: none;
+      border: 1.5px solid #D93829;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      animation: inkRipple 0.45s cubic-bezier(0.12, 0.8, 0.25, 1) forwards;
+      z-index: 99998;
+    }
+
+  
+    /* ======================================================== */
+    /* 視差景深與區域聚焦模糊效果 (Section Depth of Field Blur) */
+    
+
+  
+    /* ======================================================== */
+    /* 右側章節小圓點樣式 (Section Indicator Dots) */
+    /* ======================================================== */
+    .section-dot.active .dot-circle {
+      background-color: #D93829 !important; /* E-ink 專色紅 */
+      transform: scale(1.35) !important;
+      box-shadow: 0 0 0 3px rgba(217, 56, 41, 0.25);
+    }
+
+  
+    /* 表單防呆震動動畫與便條紙動態樣式 */
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+    .animate-shake {
+      animation: shake 0.4s ease-in-out;
+    }
+
+    .sticky-note-card {
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .sticky-note-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.08);
+    }
+    .sticky-note-tearing {
+      animation: tearOut 0.42s forwards ease-in-out;
+      pointer-events: none;
+    }
+    @keyframes tearOut {
+      0% { transform: rotate(0deg) scale(1); opacity: 1; }
+      50% { transform: rotate(3deg) translateY(12px) scale(0.95); opacity: 0.6; }
+      100% { transform: rotate(-6deg) translateY(35px) scale(0.75); opacity: 0; }
+    }
+
+    /* === 原生 CSS 滾動自然吸附 (不劫持滾輪事件，相容觸控板與高更新率螢幕) === */
+    html.scroll-snap-enabled {
+      scroll-snap-type: y proximity;
+      scroll-behavior: smooth;
+    }
+    html.scroll-snap-enabled section,
+    html.scroll-snap-enabled footer {
+      scroll-snap-align: start;
+      scroll-snap-stop: normal;
+    }
+
+    /* === 實踐 DRY 原則：抽象實體紙張與微觸感基底樣式 === */
+    .paper-panel {
+      background-color: #FBFBF9;
+      border: 1px solid #E7E5E4;
+      border-radius: 1rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .mono-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.625rem;
+      border-radius: 9999px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border: 1px solid #E7E5E4;
+      background-color: rgba(255, 255, 255, 0.85);
+      color: #44403C;
+    }
+
+    .tactile-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 0.75rem;
+      font-weight: 500;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s ease-in-out;
+    }
+    .tactile-btn:active {
+      transform: scale(0.97);
+    }
+    
